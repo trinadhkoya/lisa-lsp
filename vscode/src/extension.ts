@@ -1,11 +1,108 @@
 import * as path from 'path';
 import * as fs from 'fs';
-import { ExtensionContext, commands, window, workspace, ProgressLocation, OutputChannel } from 'vscode';
+import { ExtensionContext, commands, window, workspace, ProgressLocation, OutputChannel, TextEditor, Uri } from 'vscode';
 import { LanguageClient, LanguageClientOptions, ServerOptions, TransportKind } from 'vscode-languageclient/node';
 import { AgentPanel } from './panels/AgentPanel';
 
 let client: LanguageClient;
 let outputChannel: OutputChannel;
+
+// Helper to find existing tests
+async function getTestContext(editor: TextEditor): Promise<{ existingTestContent: string; fileStructureInfo: string }> {
+    const activeUri = editor.document.uri;
+    const wsFolder = workspace.getWorkspaceFolder(activeUri);
+    if (!wsFolder) return { existingTestContent: '', fileStructureInfo: '' };
+
+    const dir = path.dirname(activeUri.fsPath);
+    let existingTestContent = '';
+    let foundPath = '';
+
+    // 1. Check for standard test folders or sibling test files
+    const testPatterns = [
+        activeUri.fsPath.replace(/\.(ts|js|jsx|tsx)$/, '.test.$1'),
+        activeUri.fsPath.replace(/\.(ts|js|jsx|tsx)$/, '.spec.$1'),
+        path.join(dir, '__tests__', path.basename(activeUri.fsPath).replace(/\.(ts|js|jsx|tsx)$/, '.test.$1')),
+        path.join(dir, 'tests', path.basename(activeUri.fsPath).replace(/\.(ts|js|jsx|tsx)$/, '.test.$1'))
+    ];
+
+    // Try to find ANY test file in the directory to serve as a pattern if the specific test doesn't exist
+    if (!testPatterns.some(p => fs.existsSync(p))) {
+        try {
+            const files = fs.readdirSync(dir);
+            const anyTest = files.find(f => f.includes('.test.') || f.includes('.spec.'));
+            if (anyTest) {
+                testPatterns.push(path.join(dir, anyTest));
+            } else {
+                // Check subdir
+                if (fs.existsSync(path.join(dir, '__tests__'))) {
+                    const subFiles = fs.readdirSync(path.join(dir, '__tests__'));
+                    if (subFiles.length > 0) testPatterns.push(path.join(dir, '__tests__', subFiles[0]));
+                }
+            }
+        } catch (e) { }
+    }
+
+    for (const p of testPatterns) {
+        if (fs.existsSync(p)) {
+            existingTestContent = fs.readFileSync(p, 'utf-8');
+            foundPath = p;
+            break;
+        }
+    }
+
+    // Structure Info for Imports
+    const sourceRelative = workspace.asRelativePath(activeUri);
+    const testRelative = foundPath ? workspace.asRelativePath(foundPath) : 'Unknown (New File)';
+    const fileStructureInfo = `Source File: ${sourceRelative}\nTarget Test File Location: ${testRelative !== 'Unknown (New File)' ? testRelative : 'Should be placed alongside source or in __tests__ folder'}`;
+
+    return { existingTestContent, fileStructureInfo };
+}
+
+// Helper to handle test generation response
+async function handleTestGenerationResponse(res: any) {
+    if (res.success && res.action === 'generateTests' && res.data) {
+        const activeUri = window.activeTextEditor?.document.uri;
+        if (activeUri) {
+            // Determine Test File Path - Be Smarter about Location
+            const wsFolder = workspace.getWorkspaceFolder(activeUri);
+            let testPath = activeUri.fsPath.replace(/\.(ts|js|jsx|tsx)$/, '.test.$1'); // Default: sibling
+
+            // Check for standard test folders
+            if (wsFolder) {
+                const fileDir = path.dirname(activeUri.fsPath);
+                const possibleDirs = [
+                    path.join(fileDir, '__tests__'),
+                    path.join(fileDir, 'tests'),
+                    path.join(wsFolder.uri.fsPath, '__tests__'),
+                    path.join(wsFolder.uri.fsPath, 'tests')
+                ];
+
+                for (const dir of possibleDirs) {
+                    if (fs.existsSync(dir)) {
+                        const fileName = path.basename(activeUri.fsPath).replace(/\.(ts|js|jsx|tsx)$/, '.test.$1');
+                        testPath = path.join(dir, fileName);
+                        break;
+                    }
+                }
+            }
+
+            // Write File
+            try {
+                fs.mkdirSync(path.dirname(testPath), { recursive: true });
+                fs.writeFileSync(testPath, res.data);
+
+                // Open Document
+                const doc = await workspace.openTextDocument(testPath);
+                await window.showTextDocument(doc);
+                window.showInformationMessage(`Tests generated at: ${workspace.asRelativePath(testPath)}`);
+            } catch (err) {
+                window.showErrorMessage(`Failed to write test file: ${err}`);
+            }
+            return true;
+        }
+    }
+    return false;
+}
 
 export async function activate(context: ExtensionContext) {
     try {
@@ -27,7 +124,8 @@ export async function activate(context: ExtensionContext) {
                     selection: editor ? editor.document.getText(editor.selection) : '',
                     fileContent: editor ? editor.document.getText() : '',
                     languageId: editor ? editor.document.languageId : '',
-                    uri: editor ? editor.document.uri.toString() : ''
+                    uri: editor ? editor.document.uri.toString() : '',
+                    ...(editor ? await getTestContext(editor) : {})
                 };
 
                 const command = await window.showInputBox({
@@ -49,37 +147,8 @@ export async function activate(context: ExtensionContext) {
 
                             // Handle Smart Actions (e.g. Generate Tests)
                             const res: any = response;
-                            if (res.success && res.action === 'generateTests' && res.data) {
-                                const activeUri = window.activeTextEditor?.document.uri;
-                                if (activeUri) {
-                                    // Determine Test File Path
-                                    const wsFolder = workspace.getWorkspaceFolder(activeUri);
-                                    let testPath = activeUri.fsPath.replace(/\.(ts|js|jsx|tsx)$/, '.test.$1'); // Default: sibling
-
-                                    // Check for standard test folders
-                                    if (wsFolder) {
-                                        const testDirs = ['tests', '__tests__', 'test', 'spec'];
-                                        for (const dir of testDirs) {
-                                            const possibleDir = path.join(wsFolder.uri.fsPath, dir);
-                                            if (fs.existsSync(possibleDir)) {
-                                                const fileName = path.basename(activeUri.fsPath).replace(/\.(ts|js|jsx|tsx)$/, '.test.$1');
-                                                testPath = path.join(possibleDir, fileName);
-                                                break;
-                                            }
-                                        }
-                                    }
-
-                                    // Write File
-                                    fs.mkdirSync(path.dirname(testPath), { recursive: true });
-                                    fs.writeFileSync(testPath, res.data);
-
-                                    // Open Document
-                                    const doc = await workspace.openTextDocument(testPath);
-                                    await window.showTextDocument(doc);
-                                    window.showInformationMessage(`Tests generated at: ${path.basename(testPath)}`);
-                                    return;
-                                }
-                            }
+                            const handled = await handleTestGenerationResponse(res);
+                            if (handled) return;
 
                             window.showInformationMessage(`LISA: ${JSON.stringify(response)}`);
                         } catch (error) {
@@ -137,13 +206,71 @@ export async function activate(context: ExtensionContext) {
         // Manual import injection needed if not present, but for replace tool strictness, I'll add logic here.
 
         context.subscriptions.push(
-            commands.registerCommand('lisa.openAgentManager', () => {
+            commands.registerCommand('lisa.openAgentManager', async () => {
                 AgentPanel.render(context.extensionUri);
+
+                // 1. Send context (Current File/Selection)
+                const editor = window.activeTextEditor;
+                if (editor && AgentPanel.currentPanel) {
+                    const fileName = editor.document.uri.path.split('/').pop();
+                    const selection = editor.selection.isEmpty ? 'No selection' : `${editor.document.getText(editor.selection).length} chars selected`;
+                    AgentPanel.currentPanel.postMessage({
+                        command: 'updateContext',
+                        text: `File: ${fileName}\nSelection: ${selection}`
+                    });
+                }
+
+                // 2. Send Saved Configuration (Provider, Model, API Key)
+                if (AgentPanel.currentPanel) {
+                    const savedProvider = context.globalState.get<string>('lisaProvider');
+                    const savedModel = context.globalState.get<string>('lisaModel');
+                    const savedApiKey = await context.secrets.get('lisaApiKey');
+
+                    AgentPanel.currentPanel.postMessage({
+                        command: 'loadConfig',
+                        provider: savedProvider,
+                        model: savedModel,
+                        apiKey: savedApiKey
+                    });
+                }
             })
         );
 
         // Handle Messages from Webview
         AgentPanel.onMessage = async (message: any) => {
+            if (message.command === 'saveConfig') {
+                const { provider, model, apiKey } = message;
+                try {
+                    await context.globalState.update('lisaProvider', provider);
+                    await context.globalState.update('lisaModel', model);
+                    await context.secrets.store('lisaApiKey', apiKey);
+
+                    if (client && client.isRunning()) {
+                        await client.sendRequest('lisa/updateConfig', { provider, apiKey, model });
+                    }
+                    window.showInformationMessage(`LISA Config Saved: ${provider} / ${model}`);
+                } catch (e) {
+                    window.showErrorMessage(`Failed to save config: ${e}`);
+                }
+                return;
+            }
+
+            if (message.command === 'requestConfig') {
+                // Resend config if requested (e.g. reload)
+                const savedProvider = context.globalState.get<string>('lisaProvider');
+                const savedModel = context.globalState.get<string>('lisaModel');
+                const savedApiKey = await context.secrets.get('lisaApiKey');
+                if (AgentPanel.currentPanel) {
+                    AgentPanel.currentPanel.postMessage({
+                        command: 'loadConfig',
+                        provider: savedProvider,
+                        model: savedModel,
+                        apiKey: savedApiKey
+                    });
+                }
+                return;
+            }
+
             if (message.command === 'runAgent') {
                 const { agent, instruction } = message;
 
@@ -153,7 +280,8 @@ export async function activate(context: ExtensionContext) {
                     selection: editor ? editor.document.getText(editor.selection) : '',
                     fileContent: editor ? editor.document.getText() : '',
                     languageId: editor ? editor.document.languageId : '',
-                    uri: editor ? editor.document.uri.toString() : ''
+                    uri: editor ? editor.document.uri.toString() : '',
+                    ...(editor ? await getTestContext(editor) : {})
                 };
 
                 // Determine final command/action
@@ -200,15 +328,10 @@ export async function activate(context: ExtensionContext) {
                                 context: contextData
                             });
 
-                            // Handle File Creation for Tests (Reuse logic? abstract it?)
-                            if (response.success && response.action === 'generateTests' && response.data) {
-                                // ... (Same test creation logic as before, could check for deduplication later)
-                                // For now, just show result
-                                window.showInformationMessage('Tests generated!');
-                                // Ideally trigger the same file writing logic.
-                                // Quick hack: Re-trigger the logic by calling the command locally or extracting it.
-                                // For this iteration, let's just display result.
-                            }
+                            // Handle File Creation for Tests
+                            const res: any = response;
+                            const handled = await handleTestGenerationResponse(res);
+                            if (handled) return;
 
                             window.showInformationMessage(`Agent Finished: ${response.message || 'Done'}`);
 

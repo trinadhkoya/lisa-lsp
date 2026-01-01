@@ -213,8 +213,20 @@ async function generateTests(context: any) {
     const code = getCodeContext(context);
     if (!code) return { success: false, error: 'No code selected or file is empty.' };
 
+    const existingTestContent = context.existingTestContent || '';
+    const fileStructureInfo = context.fileStructureInfo || '';
+
+    const systemPrompt = `You are a QA automation expert. Generate comprehensive unit tests for the provided code.
+    
+    RULES:
+    1. Use the testing framework appropriate for the language (e.g., Jest/Mocha for JS/TS, JUnit for Java).
+    2. Return ONLY the code.
+    3. ${existingTestContent ? `Follow the coding style, imports, and structure of this EXISTING test file found in the project:\n\n${existingTestContent}\n\n` : ''}
+    4. ${fileStructureInfo ? `File Structure Context:\n${fileStructureInfo}` : ''}
+    5. Ensure imports are correct based on the file structure provided. Do not use placeholders like "path/to/module" if you can infer the relative path.`;
+
     const tests = await callAi([
-        { role: 'system', content: 'You are a QA automation expert. Generate comprehensive unit tests for the provided code. Use the testing framework appropriate for the language (e.g., Jest/Mocha for JS/TS, JUnit for Java). Return ONLY the code.' },
+        { role: 'system', content: systemPrompt },
         { role: 'user', content: code }
     ]);
     return { success: true, message: 'Tests generated.', data: tests, action: 'generateTests' };

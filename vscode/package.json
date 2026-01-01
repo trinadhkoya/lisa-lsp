@@ -31,7 +31,8 @@
         "onLanguage:javascript",
         "onLanguage:markdown",
         "onCommand:lisa.execute",
-        "onCommand:lisa.setProvider"
+        "onCommand:lisa.setProvider",
+        "onCommand:lisa.openAgentManager"
     ],
     "main": "./out/extension.js",
     "contributes": {
@@ -44,6 +45,11 @@
             {
                 "command": "lisa.setProvider",
                 "title": "LISA: Set AI Provider Config",
+                "category": "LISA"
+            },
+            {
+                "command": "lisa.openAgentManager",
+                "title": "LISA: Open Agent Manager",
                 "category": "LISA"
             }
         ],
