@@ -6,7 +6,7 @@ import com.intellij.platform.lsp.api.LspServerSupportProvider
 
 class LisaLspServerSupportProvider : LspServerSupportProvider {
     override fun fileOpened(project: Project, file: VirtualFile, serverStarter: LspServerSupportProvider.LspServerStarter) {
-        if (file.extension == "ts" || file.extension == "js") {
+        if (file.extension != null) {
             serverStarter.ensureServerStarted(LisaLspServerDescriptor(project, file))
         }
     }

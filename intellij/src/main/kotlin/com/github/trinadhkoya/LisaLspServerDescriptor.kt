@@ -6,7 +6,7 @@ import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.platform.lsp.api.LspServerDescriptor
 
 class LisaLspServerDescriptor(project: Project, virtualFile: VirtualFile) : LspServerDescriptor(project, "LISA", virtualFile) {
-    override fun isSupportedFile(file: VirtualFile) = file.extension == "ts" || file.extension == "js"
+    override fun isSupportedFile(file: VirtualFile) = file.extension != null
 
     override fun createCommandLine(): GeneralCommandLine {
         return GeneralCommandLine("node", "/Users/trinadhkoya/Desktop/mcp-lsp/dist/server.js", "--stdio")

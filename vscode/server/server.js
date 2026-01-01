@@ -72,6 +72,9 @@ let currentConfig = {
 };
 async function callAi(messages, responseFormat) {
     const { provider, apiKey, model } = currentConfig;
+    if (!apiKey) {
+        throw new Error(`API Key for ${provider} is missing. Please configure it in settings.`);
+    }
     if (provider === 'openai' || provider === 'groq') {
         const baseURL = provider === 'groq' ? 'https://api.groq.com/openai/v1' : undefined;
         const client = new openai_1.default({ apiKey, baseURL });
@@ -200,7 +203,55 @@ async function createGitLabMR(payload) {
  * REQUEST HANDLERS
  */
 // Agentic Execute Handler: Understands natural language commands
-connection.onRequest('lisa/execute', async (command) => {
+// Helper to extract code from context
+function getCodeContext(context) {
+    return context?.selection || context?.fileContent || '';
+}
+async function generateTests(context) {
+    const code = getCodeContext(context);
+    if (!code)
+        return { success: false, error: 'No code selected or file is empty.' };
+    const existingTestContent = context.existingTestContent || '';
+    const fileStructureInfo = context.fileStructureInfo || '';
+    const systemPrompt = `You are a QA automation expert. Generate comprehensive unit tests for the provided code.
+    
+    RULES:
+    1. Use the testing framework appropriate for the language (e.g., Jest/Mocha for JS/TS, JUnit for Java).
+    2. Return ONLY the code.
+    3. ${existingTestContent ? `Follow the coding style, imports, and structure of this EXISTING test file found in the project:\n\n${existingTestContent}\n\n` : ''}
+    4. ${fileStructureInfo ? `File Structure Context:\n${fileStructureInfo}` : ''}
+    5. Ensure imports are correct based on the file structure provided. Do not use placeholders like "path/to/module" if you can infer the relative path.`;
+    const tests = await callAi([
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: code }
+    ]);
+    return { success: true, message: 'Tests generated.', data: tests, action: 'generateTests' };
+}
+async function addJsDoc(context) {
+    const code = getCodeContext(context);
+    if (!code)
+        return { success: false, error: 'No code selected.' };
+    const documentedCode = await callAi([
+        { role: 'system', content: 'You are a documentation expert. Add JSDoc/Docstrings to the provided code. Document all parameters, return types, and exceptions. Return the FULL code with comments added.' },
+        { role: 'user', content: code }
+    ]);
+    return { success: true, message: 'Documentation added.', data: documentedCode, action: 'addJsDoc' };
+}
+async function refactorCode(context, instruction) {
+    const code = getCodeContext(context);
+    if (!code)
+        return { success: false, error: 'No code selected.' };
+    const refactored = await callAi([
+        { role: 'system', content: `Refactor the code based on the user's instruction. Maintain logic but improve structure/performance/readability. Return ONLY the code.` },
+        { role: 'user', content: `Code:\n${code}\n\nInstruction: ${instruction}` }
+    ]);
+    return { success: true, message: 'Code refactored.', data: refactored, action: 'refactor' };
+}
+// Agentic Execute Handler: Understands natural language commands
+connection.onRequest('lisa/execute', async (params) => {
+    // Support both legacy string command and new object format
+    const command = typeof params === 'string' ? params : params.command;
+    const context = typeof params === 'string' ? {} : params.context;
     debugLog(`Agentic execute: ${command}`);
     try {
         const interpretation = await callAi([
@@ -211,14 +262,20 @@ connection.onRequest('lisa/execute', async (command) => {
                 1. "review": { "mrUrl": "URL", "branchName": "branch" }
                 2. "jiraCreate": { "summary": "text", "description": "text", "projectKey": "key" }
                 3. "gitlabMR": { "sourceBranch": "text", "targetBranch": "text", "title": "text" }
+                4. "generateTests": {}
+                5. "addJsDoc": {}
+                6. "refactor": { "instruction": "user instruction" }
                 
-                Return ONLY a JSON object with "action" and "params". 
+                Return ONLY a raw JSON object with "action" and "params". 
+                Do NOT use markdown code blocks or backticks.
                 If "review" and a URL is found, put it in "mrUrl". 
                 If no obvious action, return { "action": "unknown", "params": {} }.`
             },
             { role: 'user', content: command }
-        ], { type: "json_object" });
-        const res = JSON.parse(interpretation || '{}');
+        ]); // Removed strict json_object mode for compatibility
+        // Clean up potential markdown code blocks if the model adds them
+        const cleanJson = (interpretation || '{}').replace(/```json/g, '').replace(/```/g, '').trim();
+        const res = JSON.parse(cleanJson);
         debugLog(`Interpreted: ${JSON.stringify(res)}`);
         switch (res.action) {
             case 'review': return await performCodeReview(res.params);
@@ -229,7 +286,12 @@ connection.onRequest('lisa/execute', async (command) => {
                 };
                 return await createJiraIssue(jiraParams);
             case 'gitlabMR': return await createGitLabMR(res.params);
-            default: throw new Error(`I am LISA. I didn't understand that command. Try "review [MR URL]" or "create jira ticket for [task]".`);
+            case 'generateTests': return await generateTests(context);
+            case 'addJsDoc': return await addJsDoc(context);
+            case 'refactor': return await refactorCode(context, res.params.instruction || command);
+            default:
+                const chatResponse = await callAi([{ role: 'user', content: command }]);
+                return { success: true, data: chatResponse, message: 'Chat received' };
         }
     }
     catch (err) {
