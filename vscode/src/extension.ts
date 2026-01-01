@@ -301,44 +301,39 @@ export async function activate(context: ExtensionContext) {
 
                 // Call Server
                 if (client && client.isRunning()) {
-                    window.withProgress({
-                        location: ProgressLocation.Notification,
-                        title: `Running Agent: ${agent}...`,
-                        cancellable: false
-                    }, async () => {
-                        try {
-                            // We construct a specific payload. 
-                            // If it's a known agent, we forces the server to take that path by sending the specific object structure it expects
-                            // OR we rely on 'lisa/execute' parser.
-                            // To be safe/explicit, we can send the exact structure.
+                    try {
+                        let prompt = instruction;
+                        if (agent === 'generateTests') prompt = 'Generate unit tests for this code';
+                        if (agent === 'addJsDoc') prompt = 'Add JSDoc documentation';
+                        if (agent === 'refactor') prompt = `Refactor this code: ${instruction}`;
 
-                            // Let's reuse the powerful 'lisa/execute' with a context.
-                            // But we need to make sure the server routes it correctly.
-                            // Ideally we'd send: { command: lspCommand, context: contextData, explicitAction: agent }
-                            // But server expects interpretation.
-                            // Let's send a command string that is easy to interpret.
+                        const response: any = await client.sendRequest('lisa/execute', {
+                            command: prompt,
+                            context: contextData
+                        });
 
-                            let prompt = instruction;
-                            if (agent === 'generateTests') prompt = 'Generate unit tests for this code';
-                            if (agent === 'addJsDoc') prompt = 'Add JSDoc documentation';
-                            if (agent === 'refactor') prompt = `Refactor this code: ${instruction}`;
-
-                            const response: any = await client.sendRequest('lisa/execute', {
-                                command: prompt,
-                                context: contextData
+                        // Send Response back to Webview
+                        if (AgentPanel.currentPanel) {
+                            AgentPanel.currentPanel.postMessage({
+                                command: 'agentResponse',
+                                data: response
                             });
-
-                            // Handle File Creation for Tests
-                            const res: any = response;
-                            const handled = await handleTestGenerationResponse(res);
-                            if (handled) return;
-
-                            window.showInformationMessage(`Agent Finished: ${response.message || 'Done'}`);
-
-                        } catch (e) {
-                            window.showErrorMessage(`Agent Failed: ${e}`);
                         }
-                    });
+
+                        // Handle File Creation for Tests
+                        const res: any = response;
+                        const handled = await handleTestGenerationResponse(res);
+                        if (handled) return;
+
+                    } catch (e) {
+                        if (AgentPanel.currentPanel) {
+                            AgentPanel.currentPanel.postMessage({
+                                command: 'agentResponse',
+                                data: { success: false, error: String(e) }
+                            });
+                        }
+                        window.showErrorMessage(`Agent Failed: ${e}`);
+                    }
                 } else {
                     window.showErrorMessage("LISA Server is not running.");
                 }

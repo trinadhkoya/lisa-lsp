@@ -59,6 +59,10 @@ let currentConfig: McpConfig = {
 async function callAi(messages: any[], responseFormat?: any) {
     const { provider, apiKey, model } = currentConfig;
 
+    if (!apiKey) {
+        throw new Error(`API Key for ${provider} is missing. Please configure it in settings.`);
+    }
+
     if (provider === 'openai' || provider === 'groq') {
         const baseURL = provider === 'groq' ? 'https://api.groq.com/openai/v1' : undefined;
         const client = new OpenAI({ apiKey, baseURL });
@@ -299,7 +303,9 @@ connection.onRequest('lisa/execute', async (params: any) => {
             case 'generateTests': return await generateTests(context);
             case 'addJsDoc': return await addJsDoc(context);
             case 'refactor': return await refactorCode(context, res.params.instruction || command);
-            default: return await callAi([{ role: 'user', content: command }]); // Fallback to chat
+            default:
+                const chatResponse = await callAi([{ role: 'user', content: command }]);
+                return { success: true, data: chatResponse, message: 'Chat received' };
         }
     } catch (err) {
         connection.console.error(`Execute error: ${err}`);

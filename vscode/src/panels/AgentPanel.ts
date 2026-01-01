@@ -53,7 +53,12 @@ export class AgentPanel {
                     // Enable JavaScript in the webview
                     enableScripts: true,
                     // Restrict the webview to only load resources from the `out` and `webview-ui/build` directories
-                    localResourceRoots: [Uri.joinPath(extensionUri, "out"), Uri.joinPath(extensionUri, "webview-ui/build")],
+                    localResourceRoots: [
+                        Uri.joinPath(extensionUri, "out"),
+                        Uri.joinPath(extensionUri, "webview-ui/build"),
+                        Uri.joinPath(extensionUri, "node_modules"),
+                        Uri.joinPath(extensionUri, "assets")
+                    ],
                 }
             );
 
@@ -92,6 +97,7 @@ export class AgentPanel {
     private _getWebviewContent(webview: Webview, extensionUri: Uri) {
         // Use codicons
         const codiconsUri = webview.asWebviewUri(Uri.joinPath(extensionUri, 'node_modules', '@vscode/codicons', 'dist', 'codicon.css'));
+        const logoUri = webview.asWebviewUri(Uri.joinPath(extensionUri, 'assets', 'icon.png'));
 
         return /*html*/ `
       <!DOCTYPE html>
@@ -303,17 +309,25 @@ export class AgentPanel {
 
             button.send-btn {
                 background-color: var(--primary);
-                color: white;
+                color: var(--vscode-button-foreground);
                 border: none;
                 border-radius: 4px;
-                width: 28px;
-                height: 28px;
+                width: 32px; /* Slightly larger */
+                height: 32px;
                 display: flex;
                 align-items: center;
                 justify-content: center;
                 cursor: pointer;
+                transition: background-color 0.2s;
             }
-            button.send-btn:hover { opacity: 0.9; }
+            button.send-btn:hover { 
+                background-color: var(--vscode-button-hoverBackground);
+            }
+            button.send-btn svg {
+                width: 16px; 
+                height: 16px;
+                fill: white;
+            }
 
             /* Settings Overlay */
             .settings-overlay {
@@ -349,12 +363,33 @@ export class AgentPanel {
                 white-space: pre-wrap;
             }
 
+            /* Agent Response */
+            .agent-response {
+                border-left: 2px solid var(--success);
+                padding-left: 12px;
+                margin-bottom: 10px;
+                margin-top: 10px;
+                animation: fadeIn 0.3s ease;
+            }
+            .agent-response .label {
+                font-size: 11px;
+                color: var(--success);
+                text-transform: uppercase;
+                letter-spacing: 0.5px;
+                margin-bottom: 4px;
+            }
+            .agent-response .content {
+                font-size: 14px;
+                line-height: 1.5;
+                white-space: pre-wrap;
+            }
+
         </style>
         </head>
         <body>
           
           <header>
-            <h2><span class="codicon codicon-hubot"></span> LISA Agent</h2>
+            <h2><img src="${logoUri}" alt="LISA" style="width:20px; height:20px; vertical-align:middle; margin-right:4px;"> LISA Agent</h2>
             <div class="header-controls">
                 <button class="icon-btn" id="toggle-settings" title="Configuration">
                     <span class="codicon codicon-settings-gear"></span>
@@ -410,8 +445,8 @@ export class AgentPanel {
                         <div class="pill" data-value="addJsDoc">Docs</div>
                         <div class="pill" data-value="refactor">Refactor</div>
                     </div>
-                    <button class="send-btn" id="run-btn">
-                        <span class="codicon codicon-arrow-up"></span>
+                    <button class="send-btn" id="run-btn" title="Send Message">
+                        <svg viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg"><path d="M1.72365 1.57467C1.19662 1.34026 0.655953 1.8817 0.891391 2.40871L3.08055 7.30906C3.12067 7.39886 3.12066 7.50207 3.08054 7.59187L0.891392 12.4922C0.655953 13.0192 1.19662 13.5607 1.72366 13.3262L14.7762 7.5251C15.32 7.28315 15.32 6.51778 14.7762 6.27583L1.72365 1.57467Z"/></svg>
                     </button>
                 </div>
             </div>
@@ -440,6 +475,7 @@ export class AgentPanel {
             const apiKeyInput = document.getElementById('api-key');
 
             let currentAgent = 'chat';
+            let lastLoadingId = '';
 
             // --- Config Logic ---
             const models = {
@@ -508,8 +544,8 @@ export class AgentPanel {
                 instructionInput.value = '';
 
                 // Indicate Processing
-                const loadingId = 'loading-' + Date.now();
-                const loadingStep = createStepElement('Running Agent...', \`\${currentAgent} is processing...\`, 'loading', loadingId);
+                lastLoadingId = 'loading-' + Date.now();
+                const loadingStep = createStepElement('Thinking...', \`\${currentAgent} is working...\`, 'loading', lastLoadingId);
                 chatHistory.appendChild(loadingStep);
                 scrollToBottom();
 
@@ -519,9 +555,6 @@ export class AgentPanel {
                     agent: currentAgent,
                     instruction: text
                 });
-
-                // (Simulate completion for UI feedback for now, actual response comes via message)
-                // Real implementation would wait for "Agent Finished" message to remove loading.
             }
 
             function addStep(title, detail, icon, id) {
@@ -567,8 +600,43 @@ export class AgentPanel {
                     if(msg.model) modelSelect.value = msg.model;
                     if(msg.apiKey) apiKeyInput.value = msg.apiKey;
                 }
-                // Handle Agent Responses (If extension sends generic messages back)
-                // For now, extensions use window.showInformationMessage, but we should bridge that.
+                
+                if (msg.command === 'agentResponse') {
+                    const loading = document.getElementById(lastLoadingId);
+                    if (loading) loading.remove();
+
+                    const res = msg.data;
+                    if (res.success) {
+                        // Show text response
+                        const div = document.createElement('div');
+                        div.className = 'agent-response';
+                        const text = typeof res.data === 'string' ? res.data : (res.message || JSON.stringify(res.data));
+                        div.innerHTML = \`<div class="label">LISA</div><div class="content">\${text}</div>\`;
+                        chatHistory.appendChild(div);
+
+                        if (currentAgent !== 'chat') {
+                             addStep('Finished', 'Task completed successfully', 'check');
+                        }
+                    } else {
+                        // Nice Error Handling
+                        let errorMsg = res.error || 'Unknown Error';
+                        let detail = '';
+                        
+                        if (errorMsg.includes('API Key') || errorMsg.includes('401')) {
+                            detail = 'Invalid API Key or Auth Error. Check settings.';
+                            // Automatically open settings if it's an auth error
+                            settingsPanel.classList.add('open');
+                        } else if (errorMsg.includes('ENOTFOUND') || errorMsg.includes('fetch failed')) {
+                             detail = 'Network Error. Check internet connection or VPN.';
+                        } else {
+                            // Trim really long stack traces
+                            if (errorMsg.length > 200) errorMsg = errorMsg.substring(0, 200) + '...';
+                        }
+                        
+                        addStep('Error', \`\${detail} \${errorMsg}\`, 'error');
+                    }
+                    scrollToBottom();
+                }
             });
 
             // Init

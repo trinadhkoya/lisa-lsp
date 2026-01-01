@@ -2,7 +2,7 @@
     "name": "lisa-vscode",
     "displayName": "LISA AI Assistant",
     "description": "LISA AI Assistant: AI-powered localization and intelligence support.",
-    "version": "1.0.8",
+    "version": "1.0.9",
     "publisher": "trinadhkoya",
     "icon": "assets/icon.png",
     "repository": {
