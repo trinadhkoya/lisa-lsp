@@ -1,0 +1,21 @@
+{
+  "name": "mcp-lsp",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "@gitbeaker/node": "^35.8.1",
+    "dotenv": "^17.2.3",
+    "jira-client": "^8.2.2",
+    "node-fetch": "^3.3.2",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.9.3",
+    "vscode-languageserver": "^9.0.1"
+  }
+}
