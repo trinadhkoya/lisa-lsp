@@ -12,6 +12,7 @@ import org.cef.browser.CefFrame
 import org.cef.handler.CefLoadHandlerAdapter
 import java.awt.BorderLayout
 import javax.swing.JPanel
+import com.intellij.openapi.util.Disposer
 
 import com.github.trinadhkoya.LisaLspServerSupportProvider
 import com.github.trinadhkoya.lisaintellijplugin.services.MyProjectService
@@ -34,6 +35,7 @@ class AgentToolWindowFactory : ToolWindowFactory, DumbAware {
     private class AgentPanel(private val project: Project) {
         val component = JPanel(BorderLayout())
         private val browser = JBCefBrowser()
+        private var jsQuery: JBCefJSQuery? = null
 
         init {
             component.add(browser.component, BorderLayout.CENTER)
@@ -42,8 +44,11 @@ class AgentToolWindowFactory : ToolWindowFactory, DumbAware {
 
         private fun setupBrowser() {
             // Register JS Query handler to receive messages from UI
-            val jsQuery = JBCefJSQuery.create(browser as JBCefBrowser)
-            jsQuery.addHandler { msg ->
+            val query = JBCefJSQuery.create(browser as JBCefBrowser)
+            Disposer.register(browser, query)
+            jsQuery = query
+            
+            query.addHandler { msg ->
                 handleMessage(msg)
                 null
             }
@@ -51,9 +56,18 @@ class AgentToolWindowFactory : ToolWindowFactory, DumbAware {
             // Inject JS bridge when page loads
             browser.jbCefClient.addLoadHandler(object : CefLoadHandlerAdapter() {
                 override fun onLoadEnd(browser: CefBrowser?, frame: CefFrame?, httpStatusCode: Int) {
-                    val injection = jsQuery.inject("msg")
-                    val script = "window.lisa = { postMessage: function(msg) { $injection } };"
-                    browser?.executeJavaScript(script, browser.url, 0)
+                    if (browser != null) {
+                        val injection = query.inject("msg")
+                        val script = """
+                            window.lisa = { 
+                                postMessage: function(msg) { 
+                                    $injection 
+                                } 
+                            };
+                        """.trimIndent()
+                        // Use null URL to avoid security context issues with loadHTML
+                        browser.executeJavaScript(script, null, 0)
+                    }
                 }
             }, browser.cefBrowser)
 
@@ -384,8 +398,22 @@ class AgentToolWindowFactory : ToolWindowFactory, DumbAware {
                         </div>
                     </div>
                   </div>
+                  
+                  <div id="debug-log" style="font-size:10px; color:#666; padding:10px; border-top:1px solid #444; max-height:100px; overflow-y:auto; display:block;">
+                    <div>Debug Log (v1.0.20):</div>
+                  </div>
 
                   <script>
+                    const debugLog = document.getElementById('debug-log');
+                    function log(msg) {
+                        const d = document.createElement('div');
+                        d.textContent = "> " + msg;
+                        debugLog.appendChild(d);
+                        debugLog.scrollTop = debugLog.scrollHeight;
+                    }
+                    
+                    log("UI Loaded. Waiting for Bridge...");
+
                     const chatHistory = document.getElementById('chat-history');
                     const instructionInput = document.getElementById('instruction');
                     const runBtn = document.getElementById('run-btn');
@@ -410,11 +438,15 @@ class AgentToolWindowFactory : ToolWindowFactory, DumbAware {
                     };
 
                     function updateModels() {
-                        const p = providerSelect.value;
-                        modelSelect.innerHTML = (models[p] || []).map(m => `<option value="${'$'}{m}">${'$'}{m}</option>`).join('');
+                        const p = providerSelect ? providerSelect.value : 'openai';
+                        if (modelSelect && models[p]) {
+                            modelSelect.innerHTML = (models[p] || []).map(m => `<option value="${'$'}{m}">${'$'}{m}</option>`).join('');
+                        }
                     }
-                    providerSelect.addEventListener('change', updateModels);
-                    updateModels();
+                    if (providerSelect) {
+                        providerSelect.addEventListener('change', updateModels);
+                        updateModels();
+                    }
 
                     toggleSettings.onclick = () => settingsPanel.classList.toggle('open');
                     closeSettings.onclick = () => settingsPanel.classList.remove('open');
@@ -445,6 +477,8 @@ class AgentToolWindowFactory : ToolWindowFactory, DumbAware {
                         };
                     });
 
+
+
                     runBtn.onclick = submit;
                     instructionInput.onkeydown = (e) => {
                         if(e.key === 'Enter' && !e.shiftKey) {
@@ -456,6 +490,14 @@ class AgentToolWindowFactory : ToolWindowFactory, DumbAware {
                     function submit() {
                         const text = instructionInput.value.trim();
                         if(!text) return;
+                        
+                        if (!window.lisa) {
+                            log("FATAL: window.lisa missing!");
+                            alert("FATAL ERROR: Internal Bridge (window.lisa) is missing.");
+                            return;
+                        }
+                        
+                        log("Sending request: " + text.substring(0, 10));
 
                         const userDiv = document.createElement('div');
                         userDiv.className = 'user-request';
@@ -469,11 +511,16 @@ class AgentToolWindowFactory : ToolWindowFactory, DumbAware {
                         chatHistory.appendChild(loadingStep);
                         scrollToBottom();
 
-                        window.lisa.postMessage(JSON.stringify({
-                            command: 'runAgent',
-                            agent: currentAgent,
-                            instruction: text
-                        }));
+                        try {
+                             window.lisa.postMessage(JSON.stringify({
+                                 command: 'runAgent',
+                                 agent: currentAgent,
+                                 instruction: text
+                             }));
+                             log("Bridge postMessage success");
+                        } catch (e) {
+                             log("Bridge postMessage FAILED: " + e.message);
+                        }
                     }
 
                     function addStep(title, detail, icon, id) {
@@ -507,25 +554,62 @@ class AgentToolWindowFactory : ToolWindowFactory, DumbAware {
                         chatHistory.scrollTop = chatHistory.scrollHeight;
                     }
 
-                    // ... (existing listeners)
+                    // Listen for messages from the extension (Agent Response)
+                    window.addEventListener('message', event => {
+                        const message = event.data; 
+                        log("Event Listener Triggered. Cmd: " + (message ? message.command : 'null'));
+
+                        if (message && message.command === 'agentResponse') {
+                            log("Handling agentResponse. Success: " + (message.data ? message.data.success : 'unknown'));
+                            
+                            // Find and remove the loading step
+                            if (lastLoadingId) {
+                                const loadingStep = document.getElementById(lastLoadingId);
+                                if (loadingStep) loadingStep.remove();
+                                lastLoadingId = '';
+                            }
+
+                            const result = message.data || {};
+                            const success = result.success;
+                            const data = result.data; 
+                            const error = result.error;
+
+                            if (success) {
+                                const responseDiv = document.createElement('div');
+                                responseDiv.className = 'agent-response';
+                                responseDiv.innerHTML = `<div class="label">LISA</div><div class="content">${'$'}{data}</div>`;
+                                chatHistory.appendChild(responseDiv);
+                            } else {
+                                log("Agent returned error: " + error);
+                                addStep('Error', error || 'Unknown error occurred.', 'error');
+                                
+                                if (error && (error.includes('API Key') || error.includes('401'))) {
+                                    settingsPanel.classList.add('open');
+                                }
+                            }
+                            scrollToBottom();
+                        }
+                        
+                        if (message && message.command === 'debug') {
+                             log("BACKEND: " + message.message);
+                        }
+                    });
 
                     // Robust Message Receiver for JCEF
                     window.receiveMessage = function(jsonStr) {
+                         log("receiveMessage called. Len: " + jsonStr.length);
                          try {
                              const msg = JSON.parse(jsonStr);
                              
                              // Dispatch a synthetic message event so existing listeners work
                              const event = new MessageEvent('message', { data: msg });
                              window.dispatchEvent(event);
+                             log("Event dispatched for: " + msg.command);
                              
-                             // Also log for debugging
-                             console.log("Received via receiveMessage:", msg);
                          } catch (e) {
-                             console.error("Failed to parse message:", e);
-                             addStep('Error', 'Failed to parse backend message: ' + e.message, 'error');
+                             log("receiveMessage Error: " + e.message);
                          }
                     };
-
                   </script>
                 </body>
                 </html>
@@ -534,66 +618,166 @@ class AgentToolWindowFactory : ToolWindowFactory, DumbAware {
             browser.loadHTML(htmlContent)
         }
         
+        private fun debugLog(msg: String) {
+             val escapedMsg = escapeJsonString(msg)
+             // Manually construct JSON to avoid nested quote issues
+             val json = "{\"command\": \"debug\", \"message\": $escapedMsg}"
+             val js = "if(window.receiveMessage) window.receiveMessage('$json');"
+             // Use invokeLater to run on EDT
+             ApplicationManager.getApplication().invokeLater {
+                 browser.cefBrowser.executeJavaScript(js, null, 0)
+             }
+        }
+
         private fun handleMessage(jsonStr: String) {
-            val command = extractJsonValue(jsonStr, "command")
-            val agent = extractJsonValue(jsonStr, "agent")
-            val instruction = extractJsonValue(jsonStr, "instruction")
-            
-            if (command == "saveConfig") {
-                // TODO: Save config
-                return 
-            }
-
-            if (command == "runAgent") {
-                // 1. Debug: Acknowledge receipt immediately
-                // This confirms the bridge works even if LSP fails
-                // Use a non-standard command just to log/verify
-                // dispatchResponse(true, "ACK: Received request for $agent", null) 
-
-                val lspManager = LspServerManager.getInstance(project)
-                val servers = lspManager.getServersForProvider(LisaLspServerSupportProvider::class.java)
-
-                if (servers.isEmpty()) {
-                    dispatchResponse(false, null, "LISA Server not found. Please open a file (JS/TS/Py/etc) in the editor to activate the server.")
-                    return
-                }
-                val server = servers.first()
-
-                // Get Editor Context
-                val editor = FileEditorManager.getInstance(project).selectedTextEditor
-                val contextData = mutableMapOf<String, String>()
-                if (editor != null) {
-                    contextData["selection"] = editor.selectionModel.selectedText ?: ""
-                    contextData["fileContent"] = editor.document.text
-                    contextData["uri"] = editor.virtualFile?.url ?: ""
-                    contextData["languageId"] = editor.virtualFile?.fileType?.name?.lowercase() ?: ""
-                }
-
-                var prompt = instruction
-                if (agent == "generateTests") prompt = "Generate unit tests for this code"
-                if (agent == "addJsDoc") prompt = "Add JSDoc documentation"
-                if (agent == "refactor") prompt = "Refactor this code: $instruction"
-
-                project.service<MyProjectService>().scope.launch {
-                    try {
-                        val params = mapOf(
-                            "command" to prompt,
-                            "context" to contextData
-                        )
+            // Run on background thread to avoid blocking UI, but use Read Action for PSI access
+            ApplicationManager.getApplication().executeOnPooledThread {
+                try {
+                    val command = extractJsonValue(jsonStr, "command")
+                    val agent = extractJsonValue(jsonStr, "agent")
+                    val instruction = extractJsonValue(jsonStr, "instruction")
+                    
+                    if (command == "saveConfig") {
+                        debugLog("Kotlin: Received saveConfig")
+                        val provider = extractJsonValue(jsonStr, "provider")
+                        val model = extractJsonValue(jsonStr, "model")
+                        val apiKey = extractJsonValue(jsonStr, "apiKey")
                         
-                        val response = server.sendRequest<Any> {
-                            (it as Endpoint).request("lisa/execute", params) as CompletableFuture<Any>
+                        val lspManager = LspServerManager.getInstance(project)
+                        val servers = lspManager.getServersForProvider(LisaLspServerSupportProvider::class.java)
+                        
+                        if (servers.isEmpty()) {
+                            debugLog("Kotlin: No LSP server for config save")
+                            dispatchResponse(false, null, "LSP server not found")
+                            return@executeOnPooledThread
                         }
                         
-                        ApplicationManager.getApplication().invokeLater {
-                             dispatchResponse(true, response, null)
+                        val server = servers.first()
+                        project.service<MyProjectService>().scope.launch {
+                            try {
+                                val configParams = mutableMapOf<String, String>()
+                                if (provider.isNotEmpty()) configParams["provider"] = provider
+                                if (model.isNotEmpty()) configParams["model"] = model
+                                if (apiKey.isNotEmpty()) configParams["apiKey"] = apiKey
+                                
+                                debugLog("Kotlin: Sending config to LSP: $configParams")
+                                
+                                val response = server.sendRequest<Any> {
+                                    val future = (it as Endpoint).request("lisa/configure", configParams) as CompletableFuture<Any>
+                                    future.orTimeout(5, java.util.concurrent.TimeUnit.SECONDS)
+                                }
+                                
+                                debugLog("Kotlin: Config response: $response")
+                                ApplicationManager.getApplication().invokeLater {
+                                    dispatchResponse(true, "Configuration saved successfully!", null)
+                                }
+                            } catch (e: Exception) {
+                                debugLog("Kotlin: Config save failed: ${e.message}")
+                                ApplicationManager.getApplication().invokeLater {
+                                    dispatchResponse(false, null, "Failed to save configuration: ${e.message}")
+                                }
+                            }
                         }
-                    } catch (e: Exception) {
-                        val errorMsg = "LSP Error: ${e.message}"
-                        ApplicationManager.getApplication().invokeLater {
-                            dispatchResponse(false, null, errorMsg)
+                        return@executeOnPooledThread
+                    }
+
+                    if (command == "runAgent") {
+                        debugLog("Kotlin: Received runAgent for $agent")
+                        
+                        val lspManager = LspServerManager.getInstance(project)
+                        val servers = lspManager.getServersForProvider(LisaLspServerSupportProvider::class.java)
+
+                        if (servers.isEmpty()) {
+                            debugLog("Kotlin: No LSP Servers found!")
+                            dispatchResponse(false, null, "LISA Server not found. Please open a file in the editor.")
+                            return@executeOnPooledThread
+                        }
+                        val server = servers.first()
+
+                        // READ ACTION REQUIRED: Accesing Editor/PSI
+                        val contextData = mutableMapOf<String, String>()
+                        
+                        com.intellij.openapi.application.ApplicationManager.getApplication().runReadAction {
+                            val editor = FileEditorManager.getInstance(project).selectedTextEditor
+                            if (editor != null) {
+                                contextData["selection"] = editor.selectionModel.selectedText ?: ""
+                                contextData["fileContent"] = editor.document.text
+                                contextData["uri"] = editor.virtualFile?.url ?: ""
+                                contextData["languageId"] = editor.virtualFile?.fileType?.name?.lowercase() ?: ""
+                                // debugLog cannot be called inside read action easily if it touches UI, so we log after
+                            }
+                        }
+                        debugLog("Kotlin: Context captured.")
+
+                        var prompt = instruction
+                        if (agent == "generateTests") prompt = "Generate unit tests for this code"
+                        if (agent == "addJsDoc") prompt = "Add JSDoc documentation"
+                        if (agent == "refactor") prompt = "Refactor this code: $instruction"
+
+                        project.service<MyProjectService>().scope.launch {
+                             try {
+                                debugLog("Kotlin: Sending workspace/executeCommand...")
+                                
+                                // Use standard LSP executeCommand
+                                val command = org.eclipse.lsp4j.ExecuteCommandParams()
+                                command.command = "lisa.chat"
+                                command.arguments = listOf(
+                                    com.google.gson.JsonPrimitive(prompt),
+                                    com.google.gson.JsonObject().apply {
+                                        contextData.forEach { (key, value) ->
+                                            addProperty(key, value)
+                                        }
+                                    }
+                                )
+                                
+                                val rawResponse = server.sendRequest<Any> {
+                                    val endpoint = it as Endpoint
+                                    @Suppress("UNCHECKED_CAST")
+                                    val future = endpoint.request("workspace/executeCommand", command) as CompletableFuture<Any>
+                                    future.orTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
+                                }
+                                
+                                debugLog("Kotlin: LSP Response Type: ${rawResponse?.javaClass?.name}")
+                                debugLog("Kotlin: LSP Response: ${rawResponse.toString()}")
+                                
+                                // Check if response is null
+                                if (rawResponse == null) {
+                                    debugLog("Kotlin: NULL response from LSP server!")
+                                    ApplicationManager.getApplication().invokeLater {
+                                        dispatchResponse(false, null, "LSP server returned null. Please check if the API key is configured.")
+                                    }
+                                    return@launch
+                                }
+                                
+                                // Handle response - it should be a string now
+                                val actualResult = rawResponse.toString()
+                                debugLog("Kotlin: Extracted Result: $actualResult")
+                                
+                                // Check if it's an error
+                                if (actualResult.startsWith("ERROR:")) {
+                                    ApplicationManager.getApplication().invokeLater {
+                                        dispatchResponse(false, null, actualResult.substring(7))
+                                    }
+                                    return@launch
+                                }
+                                
+                                ApplicationManager.getApplication().invokeLater {
+                                     dispatchResponse(true, actualResult, null)
+                                }
+                             } catch (e: Exception) {
+                                debugLog("Kotlin: LSP Request FAILED: ${e.message}")
+                                val errorMsg = "LSP Error: ${e.message}"
+                                ApplicationManager.getApplication().invokeLater {
+                                    dispatchResponse(false, null, errorMsg)
+                                }
+                             }
                         }
                     }
+                } catch (e: Exception) {
+                     val errorStr = "Kotlin Crash: ${e.message}"
+                     ApplicationManager.getApplication().invokeLater {
+                         browser.cefBrowser.executeJavaScript("alert('${escapeJsonString(errorStr)}');", null, 0)
+                     }
                 }
             }
         }
@@ -615,11 +799,20 @@ class AgentToolWindowFactory : ToolWindowFactory, DumbAware {
             """.trimIndent()
             
             // Encode the JSON string itself into a JS string literal
-            // So we can pass it to receiveMessage("...")
             val jsArg = escapeJsonString(jsonMsg)
             
-            // Execute: window.receiveMessage("{ ... }")
-            browser.cefBrowser.executeJavaScript("window.receiveMessage($jsArg);", browser.cefBrowser.url, 0)
+            // IMPORTANT FIX: Pass "about:blank" or null as the URL
+            // Passing browser.cefBrowser.url when loaded via loadHTML often fails security checks
+            val runJs = """
+                if (window.receiveMessage) {
+                    window.receiveMessage($jsArg);
+                } else {
+                    window.postMessage(JSON.parse($jsArg), '*');
+                }
+            """.trimIndent()
+
+            // Try executeJavaScript with null URL to bypass strict origin checks for data/html content
+            browser.cefBrowser.executeJavaScript(runJs, null, 0)
         }
 
         private fun escapeJsonString(s: String): String {

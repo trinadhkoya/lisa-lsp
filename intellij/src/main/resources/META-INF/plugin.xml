@@ -5,6 +5,8 @@
     <vendor>trinadhkoya</vendor>
 
     <depends>com.intellij.modules.platform</depends>
+    <depends>com.intellij.modules.lang</depends>
+    <depends optional="true" config-file="lisa-javascript.xml">JavaScript</depends>
 
     <resource-bundle>messages.MyBundle</resource-bundle>
 

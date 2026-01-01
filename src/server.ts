@@ -59,52 +59,70 @@ let currentConfig: McpConfig = {
 async function callAi(messages: any[], responseFormat?: any) {
     const { provider, apiKey, model } = currentConfig;
 
+    debugLog(`callAi: provider=${provider}, model=${model}, hasApiKey=${!!apiKey}, apiKeyLength=${apiKey?.length || 0}`);
+
     if (!apiKey) {
-        throw new Error(`API Key for ${provider} is missing. Please configure it in settings.`);
+        const errorMsg = `API Key for ${provider} is missing. Please configure it in settings.`;
+        debugLog(`callAi ERROR: ${errorMsg}`);
+        throw new Error(errorMsg);
     }
 
-    if (provider === 'openai' || provider === 'groq') {
-        const baseURL = provider === 'groq' ? 'https://api.groq.com/openai/v1' : undefined;
-        const client = new OpenAI({ apiKey, baseURL });
-        const completion = await client.chat.completions.create({
-            messages,
-            model,
-            response_format: responseFormat
-        });
-        return completion.choices[0].message.content || '';
+    try {
+        if (provider === 'openai' || provider === 'groq') {
+            const baseURL = provider === 'groq' ? 'https://api.groq.com/openai/v1' : undefined;
+            debugLog(`callAi: Creating OpenAI client for ${provider}`);
+            const client = new OpenAI({ apiKey, baseURL });
+            const completion = await client.chat.completions.create({
+                messages,
+                model,
+                response_format: responseFormat
+            });
+            const result = completion.choices[0].message.content || '';
+            debugLog(`callAi: Success! Response length: ${result.length}`);
+            return result;
+        }
+
+        if (provider === 'gemini') {
+            debugLog(`callAi: Creating Gemini client`);
+            const genAI = new GoogleGenerativeAI(apiKey);
+            const genModel = genAI.getGenerativeModel({ model: model || 'gemini-1.5-flash' });
+            const systemPrompt = messages.find(m => m.role === 'system')?.content || '';
+            const userPrompt = messages.find(m => m.role === 'user')?.content || '';
+            const fullPrompt = systemPrompt ? `${systemPrompt}\n\nUser: ${userPrompt}` : userPrompt;
+            const result = await genModel.generateContent(fullPrompt);
+            const text = result.response.text();
+            debugLog(`callAi: Success! Response length: ${text.length}`);
+            return text;
+        }
+
+        if (provider === 'claude') {
+            debugLog(`callAi: Creating Claude client`);
+            const anthropic = new Anthropic({ apiKey });
+            const system = messages.find(m => m.role === 'system')?.content;
+            const userMessages = messages.filter(m => m.role !== 'system').map(m => ({
+                role: m.role === 'user' ? 'user' as const : 'assistant' as const,
+                content: m.content
+            }));
+
+            const response = await anthropic.messages.create({
+                model,
+                system,
+                messages: userMessages,
+                max_tokens: 4096
+            });
+
+            // Handle different content types in Anthropic response
+            const textContent = response.content.find(c => c.type === 'text');
+            const result = textContent && 'text' in textContent ? textContent.text : '';
+            debugLog(`callAi: Success! Response length: ${result.length}`);
+            return result;
+        }
+
+        throw new Error(`Unsupported provider: ${provider}`);
+    } catch (error) {
+        debugLog(`callAi EXCEPTION: ${error}`);
+        throw error;
     }
-
-    if (provider === 'gemini') {
-        const genAI = new GoogleGenerativeAI(apiKey);
-        const genModel = genAI.getGenerativeModel({ model: model || 'gemini-1.5-flash' });
-        const systemPrompt = messages.find(m => m.role === 'system')?.content || '';
-        const userPrompt = messages.find(m => m.role === 'user')?.content || '';
-        const fullPrompt = systemPrompt ? `${systemPrompt}\n\nUser: ${userPrompt}` : userPrompt;
-        const result = await genModel.generateContent(fullPrompt);
-        return result.response.text();
-    }
-
-    if (provider === 'claude') {
-        const anthropic = new Anthropic({ apiKey });
-        const system = messages.find(m => m.role === 'system')?.content;
-        const userMessages = messages.filter(m => m.role !== 'system').map(m => ({
-            role: m.role === 'user' ? 'user' as const : 'assistant' as const,
-            content: m.content
-        }));
-
-        const response = await anthropic.messages.create({
-            model,
-            system,
-            messages: userMessages,
-            max_tokens: 4096
-        });
-
-        // Handle different content types in Anthropic response
-        const textContent = response.content.find(c => c.type === 'text');
-        return textContent && 'text' in textContent ? textContent.text : '';
-    }
-
-    throw new Error(`Unsupported provider: ${provider}`);
 }
 
 // Create a connection for the server. The client (IDE) will connect to this.
@@ -258,13 +276,36 @@ async function refactorCode(context: any, instruction: string) {
     return { success: true, message: 'Code refactored.', data: refactored, action: 'refactor' };
 }
 
+
+// Configuration Handler: Update API key and model settings
+connection.onRequest('lisa/configure', async (params: any) => {
+    debugLog(`Configure request: ${JSON.stringify(params)}`);
+    try {
+        if (params.provider) {
+            currentConfig.provider = params.provider;
+        }
+        if (params.model) {
+            currentConfig.model = params.model;
+        }
+        if (params.apiKey) {
+            currentConfig.apiKey = params.apiKey;
+        }
+        debugLog(`Configuration updated: provider=${currentConfig.provider}, model=${currentConfig.model}`);
+        return { success: true, message: 'Configuration updated successfully' };
+    } catch (err) {
+        connection.console.error(`Configure error: ${err}`);
+        return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
+});
+
 // Agentic Execute Handler: Understands natural language commands
 connection.onRequest('lisa/execute', async (params: any) => {
     // Support both legacy string command and new object format
     const command = typeof params === 'string' ? params : params.command;
     const context = typeof params === 'string' ? {} : params.context;
+    const requestId = params.requestId || Date.now().toString();
 
-    debugLog(`Agentic execute: ${command}`);
+    debugLog(`Agentic execute: ${command}, requestId: ${requestId}`);
     try {
         const interpretation = await callAi([
             {
@@ -291,26 +332,62 @@ connection.onRequest('lisa/execute', async (params: any) => {
         const res = JSON.parse(cleanJson);
         debugLog(`Interpreted: ${JSON.stringify(res)}`);
 
+        let result;
         switch (res.action) {
-            case 'review': return await performCodeReview(res.params);
+            case 'review': result = await performCodeReview(res.params); break;
             case 'jiraCreate':
                 const jiraParams = {
                     ...res.params,
                     projectKey: res.params.projectKey || process.env.JIRA_PROJECT_KEY || 'DOVS'
                 };
-                return await createJiraIssue(jiraParams);
-            case 'gitlabMR': return await createGitLabMR(res.params);
-            case 'generateTests': return await generateTests(context);
-            case 'addJsDoc': return await addJsDoc(context);
-            case 'refactor': return await refactorCode(context, res.params.instruction || command);
+                result = await createJiraIssue(jiraParams);
+                break;
+            case 'gitlabMR': result = await createGitLabMR(res.params); break;
+            case 'generateTests': result = await generateTests(context); break;
+            case 'addJsDoc': result = await addJsDoc(context); break;
+            case 'refactor': result = await refactorCode(context, res.params.instruction || command); break;
             default:
                 const chatResponse = await callAi([{ role: 'user', content: command }]);
-                return { success: true, data: chatResponse, message: 'Chat received' };
+                debugLog(`Returning chat response directly: ${chatResponse}`);
+                return chatResponse;
         }
+
+        debugLog(`Sending notification with result: ${JSON.stringify(result)}`);
+        // Send result as notification
+        connection.sendNotification('lisa/executeResult', { requestId, result });
+
+        // Return acknowledgment
+        return { acknowledged: true, requestId };
     } catch (err) {
         connection.console.error(`Execute error: ${err}`);
-        return { success: false, error: err instanceof Error ? err.message : String(err) };
+        const errorResult = { success: false, error: err instanceof Error ? err.message : String(err) };
+        debugLog(`Sending error notification: ${JSON.stringify(errorResult)}`);
+        connection.sendNotification('lisa/executeResult', { requestId, result: errorResult });
+        return { acknowledged: true, requestId, error: true };
     }
+});
+
+// Standard LSP workspace/executeCommand - this is guaranteed to work with LSP4J
+connection.onExecuteCommand(async (params) => {
+    debugLog(`executeCommand: ${params.command}, args: ${JSON.stringify(params.arguments)}`);
+
+    if (params.command === 'lisa.chat') {
+        const args = params.arguments || [];
+        const command = args[0] || '';
+        const context = args[1] || {};
+
+        try {
+            const chatResponse = await callAi([{ role: 'user', content: command }]);
+            debugLog(`executeCommand returning: ${chatResponse}`);
+            return chatResponse;
+        } catch (err) {
+            const errorMsg = err instanceof Error ? err.message : String(err);
+            debugLog(`executeCommand error: ${errorMsg}`);
+            return `ERROR: ${errorMsg}`;
+        }
+    }
+
+    return null;
 });
 
 connection.onRequest('lisa/review', (params) => performCodeReview(typeof params === 'string' ? { uri: params } : params));
