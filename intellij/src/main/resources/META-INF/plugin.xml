@@ -10,6 +10,8 @@
 
     <extensions defaultExtensionNs="com.intellij">
         <platform.lsp.serverSupportProvider implementation="com.github.trinadhkoya.LisaLspServerSupportProvider"/>
+        <toolWindow id="LISA Agent Manager" secondary="true" icon="AllIcons.General.Web" anchor="right"
+                    factoryClass="com.github.trinadhkoya.toolwindow.AgentToolWindowFactory"/>
     </extensions>
 
     <actions>
