@@ -1,21 +1,33 @@
 {
-  "name": "mcp-lsp",
+  "name": "lisa-lsp",
   "version": "1.0.0",
-  "main": "index.js",
+  "main": "dist/server.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "build": "tsc",
+    "start": "node dist/server.js",
+    "dev": "ts-node src/server.ts"
   },
-  "keywords": [],
+  "keywords": [
+    "lisa",
+    "lsp",
+    "ai",
+    "gitlab",
+    "jira"
+  ],
   "author": "",
   "license": "ISC",
-  "description": "",
+  "description": "LISA: Localization & Intelligence Support Assistant",
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.71.2",
     "@gitbeaker/node": "^35.8.1",
+    "@google/generative-ai": "^0.24.1",
     "dotenv": "^17.2.3",
     "jira-client": "^8.2.2",
     "node-fetch": "^3.3.2",
+    "openai": "^6.15.0",
     "ts-node": "^10.9.2",
     "typescript": "^5.9.3",
-    "vscode-languageserver": "^9.0.1"
+    "vscode-languageserver": "^9.0.1",
+    "vscode-languageserver-textdocument": "^1.0.12"
   }
 }
