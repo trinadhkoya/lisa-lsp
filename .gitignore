@@ -5,3 +5,14 @@ dist/
 *.txt
 .DS_Store
 bun.lockb
+
+# VS Code Extension
+vscode/out/
+vscode/node_modules/
+*.vsix
+
+# IntelliJ Plugin
+intellij/build/
+intellij/.gradle/
+intellij/.idea/
+intellij/out/

@@ -72,6 +72,31 @@ export function activate(context: ExtensionContext) {
 }
 ```
 
+### Step 4: Local Installation & Testing
+Before publishing, you should test the extension locally:
+1.  Install `vsce` globally: `npm install -g @vscode/vsce`
+2.  Package the extension: `vsce package` (this generates a `.vsix` file).
+3.  In VS Code, open the Extensions view, click the `...` (More Actions), and select **Install from VSIX...**.
+4.  Choose your generated `.vsix` file.
+
+### Step 5: Publishing to the Marketplace
+To make your extension available to everyone:
+
+1.  **Register as a Publisher**:
+    -   Go to the [Visual Studio Marketplace Management Portal](https://marketplace.visualstudio.com/manage).
+    -   Create a new Publisher ID (e.g., `your-name`).
+
+2.  **Get an Azure DevOps Personal Access Token (PAT)**:
+    -   Log in to [Azure DevOps](https://dev.azure.com/).
+    -   Go to **User Settings** -> **Personal Access Tokens**.
+    -   Create a new token with the scope `Marketplace (Manage)`. **Copy this token!**
+
+3.  **Publish via CLI**:
+    ```bash
+    vsce login <your-publisher-id> # Paste your PAT when prompted
+    vsce publish
+    ```
+
 ---
 
 ## 2. WebStorm / JetBrains Integration (Kotlin)

@@ -1,0 +1,34 @@
+<!-- Keep a Changelog guide -> https://keepachangelog.com -->
+
+# lisa-intellij-plugin Changelog
+
+## [Unreleased]
+
+## [1.0.3] - 2026-01-01
+
+### Added
+
+- Added `Configure LISA Provider` action to set API keys and provider settings.
+
+## [1.0.2] - 2026-01-01
+
+### Fixed
+
+- Updated LSP method name to `lisa/execute`.
+- Removed experimental and deprecated template code to improve marketplace compatibility.
+
+## [1.0.1] - 2026-01-01
+
+### Added
+
+- Updated branding to LISA AI Assistant (New name and logo).
+
+## [1.0.0] - 2026-01-01
+
+### Added
+
+- Initial scaffold created from [IntelliJ Platform Plugin Template](https://github.com/JetBrains/intellij-platform-plugin-template)
+
+[Unreleased]: https://github.com/trinadhkoya/lisa-intellij-plugin/compare/v1.0.1...HEAD
+[1.0.1]: https://github.com/trinadhkoya/lisa-intellij-plugin/compare/v1.0.0...v1.0.1
+[1.0.0]: https://github.com/trinadhkoya/lisa-intellij-plugin/commits/v1.0.0

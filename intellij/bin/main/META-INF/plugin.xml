@@ -1,0 +1,25 @@
+<!-- Plugin Configuration File. Read more: https://plugins.jetbrains.com/docs/intellij/plugin-configuration-file.html -->
+<idea-plugin>
+    <id>com.github.trinadhkoya.lisaintellijplugin</id>
+    <name>LISA AI Assistant</name>
+    <vendor>trinadhkoya</vendor>
+
+    <depends>com.intellij.modules.platform</depends>
+
+    <resource-bundle>messages.MyBundle</resource-bundle>
+
+    <extensions defaultExtensionNs="com.intellij">
+        <platform.lsp.serverSupportProvider implementation="com.github.trinadhkoya.LisaLspServerSupportProvider"/>
+    </extensions>
+
+    <actions>
+        <group id="LisaActions" text="LISA" popup="true">
+            <add-to-group group-id="ToolsMenu" anchor="last"/>
+            <action id="Lisa.Execute" class="com.github.trinadhkoya.actions.LisaExecuteAction"
+                    text="Execute LISA Command" description="Run natural language commands via LISA"/>
+            <action id="Lisa.Configure" class="com.github.trinadhkoya.actions.LisaConfigureAction"
+                    text="Configure LISA Provider" description="Set AI Provider and API Key"/>
+        </group>
+    </actions>
+
+</idea-plugin>

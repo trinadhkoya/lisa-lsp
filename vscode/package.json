@@ -1,0 +1,84 @@
+{
+    "name": "lisa-vscode",
+    "displayName": "LISA AI Assistant",
+    "description": "LISA AI Assistant: AI-powered localization and intelligence support.",
+    "version": "1.0.0",
+    "publisher": "trinadhkoya",
+    "icon": "assets/icon.png",
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/trinadhkoya/lisa-lsp.git"
+    },
+    "license": "ISC",
+    "engines": {
+        "vscode": "^1.80.0"
+    },
+    "categories": [
+        "Programming Languages",
+        "Other",
+        "AI",
+        "Linters"
+    ],
+    "keywords": [
+        "ai",
+        "localization",
+        "lsp",
+        "lisa",
+        "intelligent-assistant"
+    ],
+    "activationEvents": [
+        "onLanguage:typescript",
+        "onLanguage:javascript",
+        "onLanguage:markdown"
+    ],
+    "main": "./out/extension.js",
+    "contributes": {
+        "commands": [
+            {
+                "command": "lisa.execute",
+                "title": "LISA: Run Agentic Search/Action",
+                "category": "LISA"
+            },
+            {
+                "command": "lisa.setProvider",
+                "title": "LISA: Set AI Provider Config",
+                "category": "LISA"
+            }
+        ],
+        "configuration": {
+            "type": "object",
+            "title": "LISA Configuration",
+            "properties": {
+                "lisa.trace.server": {
+                    "type": "string",
+                    "enum": [
+                        "off",
+                        "messages",
+                        "verbose"
+                    ],
+                    "default": "off",
+                    "description": "Traces the communication between VS Code and the LISA language server."
+                }
+            }
+        }
+    },
+    "scripts": {
+        "vscode:prepublish": "npm run compile",
+        "compile": "tsc -p ./",
+        "watch": "tsc -watch -p ./",
+        "pretest": "npm run compile && npm run lint",
+        "lint": "eslint src --ext ts",
+        "test": "node ./out/test/runTest.js"
+    },
+    "devDependencies": {
+        "@types/vscode": "^1.80.0",
+        "@types/node": "18.x",
+        "typescript": "^5.1.3",
+        "eslint": "^8.41.0",
+        "@typescript-eslint/parser": "^5.59.8",
+        "@typescript-eslint/eslint-plugin": "^5.59.8"
+    },
+    "dependencies": {
+        "vscode-languageclient": "^9.0.1"
+    }
+}
