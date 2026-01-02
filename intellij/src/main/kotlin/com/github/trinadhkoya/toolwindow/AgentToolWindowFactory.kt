@@ -177,12 +177,38 @@ class AgentToolWindowFactory : ToolWindowFactory, DumbAware {
                     }
                     .agent-message strong { color: var(--text-primary); font-weight: 600; }
                     
+
                     /* Input Area Container */
                     .input-container {
                         padding: 16px;
                         background: var(--bg-app);
                         position: relative;
                         z-index: 10;
+                    }
+
+                    /* Starter Chips */
+                    .starter-chips {
+                         display: flex;
+                         flex-wrap: wrap;
+                         gap: 8px;
+                         padding: 0 16px;
+                         margin-bottom: 20px;
+                         justify-content: center;
+                    }
+                    .chip-btn {
+                        background: var(--bg-panel);
+                        border: 1px solid var(--border);
+                        color: var(--text-secondary);
+                        padding: 6px 12px;
+                        border-radius: 16px;
+                        font-size: 11px;
+                        cursor: pointer;
+                        transition: all 0.2s;
+                    }
+                    .chip-btn:hover {
+                         color: var(--text-primary);
+                         border-color: var(--text-secondary);
+                         background: var(--bg-input);
                     }
                     
                     /* The Main Input Box */
@@ -197,7 +223,8 @@ class AgentToolWindowFactory : ToolWindowFactory, DumbAware {
                         transition: border-color 0.2s;
                     }
                     .input-box:focus-within {
-                        border-color: #52525b;
+                        border-color: #71717a;
+                        box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.1);
                     }
 
                     textarea {
@@ -345,6 +372,12 @@ class AgentToolWindowFactory : ToolWindowFactory, DumbAware {
                             Hi! I'm ready to help. Ask me anything or press <strong>CMD+L</strong> to start.
                         </div>
                   </div>
+                  
+                  <div id="starter-area" class="starter-chips">
+                       <button class="chip-btn" onclick="quickAction('Explain this code')">Explain Code</button>
+                       <button class="chip-btn" onclick="quickAction('Write unit tests for this')">Generate Tests</button>
+                       <button class="chip-btn" onclick="quickAction('Find bugs in this')">Find Bugs</button>
+                  </div>
 
                   <div class="input-container">
                     
@@ -464,6 +497,10 @@ class AgentToolWindowFactory : ToolWindowFactory, DumbAware {
                         const text = instructionInput.value.trim();
                         if (!text) return;
                         
+                        // Hide starter chips
+                        const starterArea = document.getElementById('starter-area');
+                        if (starterArea) starterArea.style.display = 'none';
+                        
                         // User Message UI
                         const userDiv = document.createElement('div');
                         userDiv.className = 'user-message';
@@ -485,6 +522,11 @@ class AgentToolWindowFactory : ToolWindowFactory, DumbAware {
                              console.error("Bridge Error", e);
                         }
                     }
+
+                    window.quickAction = function(text) {
+                        instructionInput.value = text;
+                        submit();
+                    };
 
                     runBtn.onclick = submit;
                     instructionInput.onkeydown = (e) => {
