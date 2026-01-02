@@ -83,272 +83,366 @@ class AgentToolWindowFactory : ToolWindowFactory, DumbAware {
                   <meta charset="UTF-8">
                   <style>
                     :root {
-                        --bg-color: #2b2b2b;
-                        --fg-color: #a9b7c6;
-                        --border-color: #4e5254;
-                        --item-hover: #3c3f41;
-                        --input-bg: #3c3f41;
-                        --input-fg: #bababa;
-                        --primary: #365880;
-                        --secondary: #808080;
-                        --success: #629755;
-                        --error: #cc666e;
-                        --font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+                        --bg-primary: #1e1e1e;
+                        --bg-secondary: #252526;
+                        --bg-tertiary: #2d2d30;
+                        --border-color: #3e3e42;
+                        --text-primary: #cccccc;
+                        --text-secondary: #858585;
+                        --text-muted: #6a6a6a;
+                        --accent-blue: #007acc;
+                        --accent-blue-hover: #1a8cdb;
+                        --accent-green: #4ec9b0;
+                        --accent-purple: #c586c0;
+                        --success: #73c991;
+                        --error: #f48771;
+                        --font-main: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+                        --font-mono: "SF Mono", Monaco, "Cascadia Code", "Roboto Mono", Consolas, "Courier New", monospace;
                     }
 
+                    * { box-sizing: border-box; }
+                    
                     body {
-                        background-color: var(--bg-color);
-                        color: var(--fg-color);
-                        font-family: var(--font-family);
+                        background: var(--bg-primary);
+                        color: var(--text-primary);
+                        font-family: var(--font-main);
                         margin: 0;
                         padding: 0;
                         height: 100vh;
                         display: flex;
                         flex-direction: column;
                         overflow: hidden;
+                        font-size: 13px;
+                        line-height: 1.6;
                     }
 
-                    /* Header */
+                    /* Header - Clean & Minimal */
                     header {
-                        padding: 12px 16px;
+                        padding: 14px 20px;
                         border-bottom: 1px solid var(--border-color);
+                        background: var(--bg-secondary);
                         display: flex;
                         justify-content: space-between;
                         align-items: center;
-                        background-color: var(--bg-color);
                         flex-shrink: 0;
                     }
                     header h2 {
                         margin: 0;
-                        font-size: 14px;
+                        font-size: 13px;
                         font-weight: 600;
-                        display: flex;
-                        align-items: center;
-                        gap: 8px;
-                    }
-                    .header-controls {
-                        display: flex;
-                        gap: 8px;
+                        color: var(--text-primary);
+                        letter-spacing: -0.01em;
                     }
                     .icon-btn {
-                        background: none;
+                        background: transparent;
                         border: none;
-                        color: var(--fg-color);
+                        color: var(--text-secondary);
                         cursor: pointer;
-                        padding: 4px;
+                        padding: 6px 8px;
                         border-radius: 4px;
-                        display: flex;
-                        align-items: center;
-                        justify-content: center;
-                        font-size: 16px;
+                        transition: all 0.15s ease;
+                        font-size: 14px;
                     }
                     .icon-btn:hover {
-                        background-color: var(--item-hover);
+                        background: var(--bg-tertiary);
+                        color: var(--text-primary);
                     }
 
-                    /* Chat Area */
+                    /* Chat History - Spacious & Clean */
                     #chat-history {
                         flex: 1;
                         overflow-y: auto;
-                        padding: 20px;
+                        padding: 24px 20px;
                         display: flex;
                         flex-direction: column;
-                        gap: 20px;
+                        gap: 24px;
+                    }
+                    #chat-history::-webkit-scrollbar { width: 8px; }
+                    #chat-history::-webkit-scrollbar-track { background: transparent; }
+                    #chat-history::-webkit-scrollbar-thumb { 
+                        background: var(--border-color); 
+                        border-radius: 4px;
+                    }
+                    #chat-history::-webkit-scrollbar-thumb:hover { background: #4a4a4f; }
+
+                    /* Welcome Card */
+                    .welcome-card {
+                        background: linear-gradient(135deg, var(--bg-secondary) 0%, var(--bg-tertiary) 100%);
+                        border: 1px solid var(--border-color);
+                        border-radius: 8px;
+                        padding: 20px;
+                        margin-bottom: 8px;
+                    }
+                    .welcome-title {
+                        font-size: 15px;
+                        font-weight: 600;
+                        margin-bottom: 8px;
+                        color: var(--text-primary);
+                    }
+                    .welcome-subtitle {
+                        font-size: 12px;
+                        color: var(--text-secondary);
+                        line-height: 1.5;
                     }
 
                     /* Message Blocks */
                     .message-block {
+                        animation: slideIn 0.2s ease;
+                    }
+                    @keyframes slideIn {
+                        from { opacity: 0; transform: translateY(8px); }
+                        to { opacity: 1; transform: translateY(0); }
+                    }
+
+                    /* User Message */
+                    .user-message {
                         display: flex;
                         flex-direction: column;
-                        gap: 8px;
-                        animation: fadeIn 0.3s ease;
+                        gap: 6px;
                     }
-                    @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
-
-                    .user-request {
-                        border-left: 2px solid var(--primary);
-                        padding-left: 12px;
-                        margin-bottom: 10px;
-                    }
-                    .user-request .label {
+                    .message-label {
                         font-size: 11px;
-                        color: var(--secondary);
+                        font-weight: 600;
                         text-transform: uppercase;
                         letter-spacing: 0.5px;
-                        margin-bottom: 4px;
+                        color: var(--text-muted);
                     }
-                    .user-request .content {
-                        font-size: 14px;
-                        line-height: 1.4;
+                    .user-content {
+                        background: var(--bg-secondary);
+                        border: 1px solid var(--border-color);
+                        border-radius: 6px;
+                        padding: 12px 14px;
+                        font-size: 13px;
+                        line-height: 1.5;
+                        color: var(--text-primary);
                     }
 
-                    /* Step Items (Like AntiGravity) */
-                    .step-item {
+                    /* Agent Response */
+                    .agent-message {
+                        display: flex;
+                        flex-direction: column;
+                        gap: 6px;
+                    }
+                    .agent-content {
+                        background: var(--bg-tertiary);
+                        border-left: 3px solid var(--accent-green);
+                        border-radius: 6px;
+                        padding: 14px 16px;
+                        font-size: 13px;
+                        line-height: 1.6;
+                        color: var(--text-primary);
+                        white-space: pre-wrap;
+                        word-wrap: break-word;
+                    }
+
+                    /* Status Messages */
+                    .status-message {
                         display: flex;
                         align-items: center;
                         gap: 10px;
-                        padding: 8px 12px;
+                        padding: 10px 14px;
+                        background: var(--bg-secondary);
                         border: 1px solid var(--border-color);
-                        background-color: #323232;
                         border-radius: 6px;
-                        font-size: 13px;
+                        font-size: 12px;
+                        color: var(--text-secondary);
                     }
-                    .step-icon {
-                        font-size: 16px;
-                        width: 20px;
-                        text-align: center;
-                    }
-                    .step-content {
-                        flex: 1;
-                        display: flex;
-                        flex-direction: column;
-                    }
-                    .step-title {
-                        font-weight: 500;
-                    }
-                    .step-detail {
-                        font-size: 11px;
-                        color: var(--secondary);
-                        margin-top: 2px;
-                    }
+                    .status-message.success { border-left: 3px solid var(--success); }
+                    .status-message.error { border-left: 3px solid var(--error); }
 
-                    /* Input Area (Bottom) */
+                    /* Input Container - Modern & Clean */
                     .input-container {
-                        padding: 16px;
+                        padding: 16px 20px 20px;
                         border-top: 1px solid var(--border-color);
-                        background-color: var(--bg-color);
+                        background: var(--bg-secondary);
                         flex-shrink: 0;
                     }
                     .input-wrapper {
-                        position: relative;
-                        background-color: var(--input-bg);
+                        background: var(--bg-tertiary);
                         border: 1px solid var(--border-color);
                         border-radius: 8px;
-                        padding: 2px;
-                        transition: border-color 0.2s;
+                        transition: border-color 0.2s ease;
+                    }
+                    .input-wrapper:focus-within {
+                        border-color: var(--accent-blue);
                     }
                     textarea {
                         width: 100%;
                         border: none;
-                        background: none;
-                        color: var(--input-fg);
-                        padding: 10px;
-                        font-family: inherit;
+                        background: transparent;
+                        color: var(--text-primary);
+                        padding: 12px 14px;
+                        font-family: var(--font-main);
                         font-size: 13px;
                         resize: none;
                         outline: none;
-                        min-height: 40px;
-                        box-sizing: border-box;
-                        display: block;
+                        min-height: 44px;
+                        max-height: 120px;
                     }
+                    textarea::placeholder {
+                        color: var(--text-muted);
+                    }
+
+                    /* Input Actions */
                     .input-actions {
                         display: flex;
                         justify-content: space-between;
                         align-items: center;
-                        padding: 4px 8px;
+                        padding: 8px 10px;
                         border-top: 1px solid var(--border-color);
                     }
                     
-                    /* Agent Selector (Pill style in input) */
+                    /* Agent Pills */
                     .agent-pills {
                         display: flex;
                         gap: 6px;
+                        flex-wrap: wrap;
                     }
                     .pill {
                         font-size: 11px;
-                        padding: 3px 8px;
-                        border-radius: 12px;
-                        background-color: #404040;
-                        color: #ccc;
+                        font-weight: 500;
+                        padding: 4px 10px;
+                        border-radius: 4px;
+                        background: var(--bg-primary);
+                        color: var(--text-secondary);
                         cursor: pointer;
-                        opacity: 0.6;
-                        transition: opacity 0.2s;
                         border: 1px solid transparent;
+                        transition: all 0.15s ease;
                     }
-                    .pill:hover, .pill.active {
-                        opacity: 1;
-                        border-color: var(--fg-color);
+                    .pill:hover {
+                        background: var(--bg-secondary);
+                        color: var(--text-primary);
+                    }
+                    .pill.active {
+                        background: var(--accent-blue);
+                        color: white;
+                        border-color: var(--accent-blue);
                     }
 
-                    button.send-btn {
-                        background-color: var(--primary);
+                    /* Send Button */
+                    .send-btn {
+                        background: var(--accent-blue);
                         color: white;
                         border: none;
-                        border-radius: 4px;
-                        width: 32px;
-                        height: 32px;
+                        border-radius: 6px;
+                        width: 34px;
+                        height: 34px;
                         display: flex;
                         align-items: center;
                         justify-content: center;
                         cursor: pointer;
-                        transition: background-color 0.2s;
+                        transition: all 0.15s ease;
+                        flex-shrink: 0;
                     }
-                    button.send-btn:hover { 
-                        opacity: 0.9;
+                    .send-btn:hover {
+                        background: var(--accent-blue-hover);
+                        transform: scale(1.05);
                     }
-                    button.send-btn svg {
-                        width: 16px; 
+                    .send-btn:active {
+                        transform: scale(0.98);
+                    }
+                    .send-btn svg {
+                        width: 16px;
                         height: 16px;
                         fill: white;
                     }
 
-                    /* Settings Overlay */
+                    /* Settings Panel */
                     .settings-overlay {
                         position: absolute;
-                        top: 50px;
-                        right: 16px;
-                        width: 280px;
-                        background-color: #3c3f41;
+                        top: 56px;
+                        right: 20px;
+                        width: 300px;
+                        background: var(--bg-secondary);
                         border: 1px solid var(--border-color);
                         border-radius: 8px;
-                        box-shadow: 0 4px 12px rgba(0,0,0,0.5);
-                        padding: 16px;
+                        box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+                        padding: 20px;
                         z-index: 100;
                         display: none;
                     }
-                    .settings-overlay.open { display: block; }
-                    .form-group { margin-bottom: 12px; }
-                    .form-group label { display: block; font-size: 11px; font-weight: 600; margin-bottom: 4px; color: var(--secondary); }
-                    .form-group select, .form-group input { 
-                        width: 100%; padding: 6px; border-radius: 4px; 
-                        border: 1px solid var(--border-color); background: var(--input-bg); color: var(--input-fg);
+                    .settings-overlay.open { display: block; animation: slideIn 0.2s ease; }
+                    .settings-header {
+                        display: flex;
+                        justify-content: space-between;
+                        align-items: center;
+                        margin-bottom: 16px;
                     }
-
-                    /* Agent Response */
-                    .agent-response {
-                        border-left: 2px solid var(--success);
-                        padding-left: 12px;
-                        margin-bottom: 10px;
-                        margin-top: 10px;
-                        animation: fadeIn 0.3s ease;
+                    .settings-title {
+                        font-size: 14px;
+                        font-weight: 600;
+                        color: var(--text-primary);
                     }
-                    .agent-response .label {
+                    .close-btn {
+                        background: transparent;
+                        border: none;
+                        color: var(--text-secondary);
+                        cursor: pointer;
+                        padding: 4px;
+                        font-size: 16px;
+                        line-height: 1;
+                    }
+                    .close-btn:hover { color: var(--text-primary); }
+                    
+                    .form-group {
+                        margin-bottom: 14px;
+                    }
+                    .form-group label {
+                        display: block;
                         font-size: 11px;
-                        color: var(--success);
+                        font-weight: 600;
                         text-transform: uppercase;
                         letter-spacing: 0.5px;
-                        margin-bottom: 4px;
+                        margin-bottom: 6px;
+                        color: var(--text-muted);
                     }
-                    .agent-response .content {
-                        font-size: 14px;
-                        line-height: 1.5;
-                        white-space: pre-wrap;
+                    .form-group select,
+                    .form-group input {
+                        width: 100%;
+                        padding: 8px 10px;
+                        border-radius: 4px;
+                        border: 1px solid var(--border-color);
+                        background: var(--bg-tertiary);
+                        color: var(--text-primary);
+                        font-size: 12px;
+                        font-family: var(--font-main);
+                        outline: none;
+                        transition: border-color 0.2s ease;
+                    }
+                    .form-group select:focus,
+                    .form-group input:focus {
+                        border-color: var(--accent-blue);
+                    }
+                    
+                    .save-btn {
+                        width: 100%;
+                        padding: 9px;
+                        background: var(--accent-blue);
+                        color: white;
+                        border: none;
+                        border-radius: 6px;
+                        font-size: 12px;
+                        font-weight: 600;
+                        cursor: pointer;
+                        transition: all 0.15s ease;
+                        margin-top: 6px;
+                    }
+                    .save-btn:hover {
+                        background: var(--accent-blue-hover);
                     }
                   </style>
                 </head>
                 <body>
                   
                   <header>
-                    <h2>🤖 LISA Agent</h2>
-                    <div class="header-controls">
-                        <button class="icon-btn" id="toggle-settings" title="Configuration">⚙️</button>
-                    </div>
+                    <h2>LISA Agent</h2>
+                    <button class="icon-btn" id="toggle-settings" title="Configuration">⚙️</button>
                   </header>
 
                   <div id="settings-panel" class="settings-overlay">
-                        <div style="display:flex; justify-content:space-between; margin-bottom:10px;">
-                            <strong>Configuration</strong>
-                            <span id="close-settings" style="cursor:pointer;">✖️</span>
+                        <div class="settings-header">
+                            <div class="settings-title">Configuration</div>
+                            <button class="close-btn" id="close-settings">✕</button>
                         </div>
                         <div class="form-group">
                             <label>Provider</label>
@@ -365,19 +459,16 @@ class AgentToolWindowFactory : ToolWindowFactory, DumbAware {
                         </div>
                         <div class="form-group">
                             <label>API Key</label>
-                            <input type="password" id="api-key" placeholder="Saved Securely" />
+                            <input type="password" id="api-key" placeholder="Enter your API key" />
                         </div>
-                        <button id="save-config-btn" style="width:100%; padding:6px; cursor:pointer; background:var(--primary); color:white; border:none; border-radius:4px;">Save Config</button>
+                        <button class="save-btn" id="save-config-btn">Save Configuration</button>
                   </div>
 
                   <!-- Chat Feed -->
                   <div id="chat-history">
-                      <div class="step-item">
-                          <div class="step-icon">👋</div>
-                          <div class="step-content">
-                              <div class="step-title">Welcome to LISA</div>
-                              <div class="step-detail">I'm ready to help you code. Select an agent capability below.</div>
-                          </div>
+                      <div class="welcome-card">
+                          <div class="welcome-title">Welcome to LISA</div>
+                          <div class="welcome-subtitle">I'm ready to help you code. Select an agent capability below and start chatting.</div>
                       </div>
                   </div>
 
@@ -399,8 +490,8 @@ class AgentToolWindowFactory : ToolWindowFactory, DumbAware {
                     </div>
                   </div>
                   
-                  <div id="debug-log" style="font-size:10px; color:#666; padding:10px; border-top:1px solid #444; max-height:100px; overflow-y:auto; display:block;">
-                    <div>Debug Log (v1.0.20):</div>
+                  <div id="debug-log" style="font-size:10px; color:#666; padding:10px; border-top:1px solid #444; max-height:100px; overflow-y:auto; display:none;">
+                    <div>Debug Log (v1.0.9):</div>
                   </div>
 
                   <script>
@@ -459,7 +550,11 @@ class AgentToolWindowFactory : ToolWindowFactory, DumbAware {
                             apiKey: apiKeyInput.value
                         }));
                         settingsPanel.classList.remove('open');
-                        addStep('Config Saved', `Provider: ${'$'}{providerSelect.value}`, 'check');
+                        const successDiv = document.createElement('div');
+                        successDiv.className = 'status-message success';
+                        successDiv.innerHTML = `<span>✅</span><span>Configuration saved successfully!</span>`;
+                        chatHistory.appendChild(successDiv);
+                        scrollToBottom();
                     };
 
                     pills.forEach(p => {
@@ -500,15 +595,21 @@ class AgentToolWindowFactory : ToolWindowFactory, DumbAware {
                         log("Sending request: " + text.substring(0, 10));
 
                         const userDiv = document.createElement('div');
-                        userDiv.className = 'user-request';
-                        userDiv.innerHTML = `<div class="label">YOU</div><div class="content">${'$'}{text}</div>`;
+                        userDiv.className = 'message-block user-message';
+                        userDiv.innerHTML = `
+                            <div class="message-label">YOU</div>
+                            <div class="user-content">${'$'}{text}</div>
+                        `;
                         chatHistory.appendChild(userDiv);
                         
                         instructionInput.value = '';
 
                         lastLoadingId = 'loading-' + Date.now();
-                        const loadingStep = createStepElement('Thinking...', `${'$'}{currentAgent} is working...`, 'loading', lastLoadingId);
-                        chatHistory.appendChild(loadingStep);
+                        const loadingDiv = document.createElement('div');
+                        loadingDiv.id = lastLoadingId;
+                        loadingDiv.className = 'status-message';
+                        loadingDiv.innerHTML = `<span>⏳</span><span>Thinking...</span>`;
+                        chatHistory.appendChild(loadingDiv);
                         scrollToBottom();
 
                         try {
@@ -576,12 +677,18 @@ class AgentToolWindowFactory : ToolWindowFactory, DumbAware {
 
                             if (success) {
                                 const responseDiv = document.createElement('div');
-                                responseDiv.className = 'agent-response';
-                                responseDiv.innerHTML = `<div class="label">LISA</div><div class="content">${'$'}{data}</div>`;
+                                responseDiv.className = 'message-block agent-message';
+                                responseDiv.innerHTML = `
+                                    <div class="message-label">LISA</div>
+                                    <div class="agent-content">${'$'}{data}</div>
+                                `;
                                 chatHistory.appendChild(responseDiv);
                             } else {
                                 log("Agent returned error: " + error);
-                                addStep('Error', error || 'Unknown error occurred.', 'error');
+                                const errorDiv = document.createElement('div');
+                                errorDiv.className = 'status-message error';
+                                errorDiv.innerHTML = `<span>❌</span><span>${'$'}{error || 'Unknown error occurred.'}</span>`;
+                                chatHistory.appendChild(errorDiv);
                                 
                                 if (error && (error.includes('API Key') || error.includes('401'))) {
                                     settingsPanel.classList.add('open');
