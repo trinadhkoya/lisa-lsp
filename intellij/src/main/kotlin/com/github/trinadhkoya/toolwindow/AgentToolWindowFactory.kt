@@ -126,8 +126,8 @@ class AgentToolWindowFactory : ToolWindowFactory, DumbAware {
                         gap: 12px;
                     }
                     .header-title img {
-                        width: 32px;
-                        height: 32px;
+                        width: 48px;
+                        height: 48px;
                         object-fit: contain;
                     }
                     .header-actions {
@@ -357,7 +357,7 @@ class AgentToolWindowFactory : ToolWindowFactory, DumbAware {
                   
                   <header>
                     <div class="header-title">
-                       <img src="data:image/png;base64,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" style="width:16px;height:16px;vertical-align:middle;margin-right:4px;">
+                       <img src="data:image/png;base64,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" style="width:16px;height:16px;vertical-align:middle;margin-right:4px;">
                        <span>LISA Agent</span>
                     </div>
                     <div class="header-actions">
@@ -417,7 +417,7 @@ class AgentToolWindowFactory : ToolWindowFactory, DumbAware {
                                 </button>
                             </div>
                             <div class="right-controls">
-                                <button class="icon-btn">🎤</button>
+                                <button class="icon-btn" id="mic-btn">🎤</button>
                                 <button class="send-btn" id="run-btn">
                                     <svg viewBox="0 0 16 16"><path d="M1.72365 1.57467C1.19662 1.34026 0.655953 1.8817 0.891391 2.40871L3.08055 7.30906C3.12067 7.39886 3.12066 7.50207 3.08054 7.59187L0.891392 12.4922C0.655953 13.0192 1.19662 13.5607 1.72366 13.3262L14.7762 7.5251C15.32 7.28315 15.32 6.51778 14.7762 6.27583L1.72365 1.57467Z"/></svg>
                                 </button>
@@ -433,6 +433,7 @@ class AgentToolWindowFactory : ToolWindowFactory, DumbAware {
                     const chatHistory = document.getElementById('chat-history');
                     const instructionInput = document.getElementById('instruction');
                     const runBtn = document.getElementById('run-btn');
+                    const micBtn = document.getElementById('mic-btn');
                     
                     // Config Elements
                     const settingsPanel = document.getElementById('settings-panel');
@@ -573,6 +574,53 @@ class AgentToolWindowFactory : ToolWindowFactory, DumbAware {
                              window.dispatchEvent(event);
                          } catch (e) {}
                     };
+
+
+                    // Speech Recognition Logic
+                    if ('webkitSpeechRecognition' in window) {
+                        const recognition = new webkitSpeechRecognition();
+                        recognition.continuous = false;
+                        recognition.interimResults = false;
+                        
+                        micBtn.onclick = () => {
+                            if (micBtn.classList.contains('listening')) {
+                                recognition.stop();
+                            } else {
+                                recognition.start();
+                            }
+                        };
+                        
+                        recognition.onstart = () => {
+                            micBtn.classList.add('listening');
+                            micBtn.style.color = '#ef4444'; // Red when listening
+                        };
+                        
+                        recognition.onend = () => {
+                            micBtn.classList.remove('listening');
+                            micBtn.style.color = ''; // Reset color
+                        };
+                        
+                        recognition.onresult = (event) => {
+                            const transcript = event.results[0][0].transcript;
+                            instructionInput.value += (instructionInput.value ? ' ' : '') + transcript;
+                            // Auto-resize
+                            instructionInput.style.height = 'auto';
+                            instructionInput.style.height = (instructionInput.scrollHeight) + 'px';
+                        };
+                        
+                        recognition.onerror = (event) => {
+                            console.error('Speech error', event);
+                            micBtn.style.color = '';
+                            if (event.error === 'not-allowed') {
+                                alert('Microphone access denied.');
+                            }
+                        };
+                    } else {
+                        micBtn.onclick = () => {
+                            alert('Speech recognition is not supported in this IDE version.');
+                        };
+                        micBtn.style.opacity = '0.5';
+                    }
 
                     // Init
                     updateModels();
