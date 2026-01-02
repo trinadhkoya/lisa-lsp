@@ -403,8 +403,6 @@ class AgentToolWindowFactory : ToolWindowFactory, DumbAware {
 
                    <div id="chat-history">
                         <div class="welcome-container" id="welcome-screen">
-                             <!-- Re-using the same icon but larger for center stage -->
-                             <img src="data:image/png;base64,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">
                              <div class="welcome-text">
                                 Hi! I'm ready to help.<br>
                                 Ask me anything or press <strong>CMD+L</strong> to start.
@@ -443,14 +441,10 @@ class AgentToolWindowFactory : ToolWindowFactory, DumbAware {
                     </div>
 
                     <div class="input-box">
-                        <textarea id="instruction" placeholder="Ask anything (⌘L), @ to mention, / for workflows"></textarea>
+                        <textarea id="instruction" placeholder="Ask anything or help with what our LISA can do."></textarea>
                         
                         <div class="input-controls">
                             <div class="left-controls">
-                                <button class="icon-btn" title="Add Context">+</button>
-                                <button class="pill-btn" id="mode-btn">
-                                    Fast <span>⌄</span>
-                                </button>
                                 <button class="pill-btn" id="model-btn">
                                     Gemini 3 Pro <span>⌄</span>
                                 </button>
