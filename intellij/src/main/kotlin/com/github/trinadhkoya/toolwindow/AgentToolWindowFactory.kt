@@ -626,15 +626,24 @@ class AgentToolWindowFactory : ToolWindowFactory, DumbAware {
                             
                             micBtn.onclick = () => {
                                 if (micBtn.classList.contains('listening')) {
-                                    recognition.stop();
+                                    try { recognition.stop(); } catch(e) {}
+                                    micBtn.classList.remove('listening');
+                                    micBtn.style.color = '';
                                 } else {
                                     // Visual feedback immediately
                                     micBtn.style.opacity = '0.5';
                                     try {
                                         recognition.start();
                                     } catch (err) {
-                                        alert('Failed to start speech recognition: ' + err.message);
-                                        micBtn.style.opacity = '1';
+                                        // Ignore 'already started' errors, just ensure UI reflects it
+                                        if (err.message.includes('already started')) {
+                                             micBtn.classList.add('listening');
+                                             micBtn.style.color = '#ef4444';
+                                             micBtn.style.opacity = '1';
+                                        } else {
+                                            alert('Failed to start speech recognition: ' + err.message);
+                                            micBtn.style.opacity = '1';
+                                        }
                                     }
                                 }
                             };
@@ -667,8 +676,9 @@ class AgentToolWindowFactory : ToolWindowFactory, DumbAware {
                                     alert('Microphone access denied. Please check your OS settings for IntelliJ.');
                                 } else if (event.error === 'no-speech') {
                                     // Quiet failure, just reset
+                                    micBtn.classList.remove('listening');
                                 } else {
-                                    alert('Speech error: ' + event.error);
+                                    // alert('Speech error: ' + event.error);
                                 }
                             };
                         } catch (e) {

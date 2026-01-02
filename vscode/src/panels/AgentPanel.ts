@@ -4,11 +4,6 @@ import { getNonce } from "../utilities/getNonce";
 
 /**
  * This class manages the state and behavior of AgentPanel webview panels.
- *
- * It contains all the data and methods for:
- * - Creating and rendering AgentPanel webview panels
- * - Properly cleaning up and disposing of webview resources when the panel is closed
- * - Setting the HTML (and by proxy CSS/JavaScript) content of the webview panel
  */
 export class AgentPanel {
     public static currentPanel: AgentPanel | undefined;
@@ -17,42 +12,21 @@ export class AgentPanel {
 
     private constructor(panel: WebviewPanel, extensionUri: Uri) {
         this._panel = panel;
-
-        // Set an event listener to listen for when the panel is disposed (i.e. when the user closes
-        // the panel or when the panel is closed programmatically)
         this._panel.onDidDispose(() => this.dispose(), null, this._disposables);
-
-        // Set the HTML content for the webview panel
         this._panel.webview.html = this._getWebviewContent(this._panel.webview, extensionUri);
-
-        // Set an event listener to listen for messages passed from the webview context
         this._setWebviewMessageListener(this._panel.webview);
     }
 
-    /**
-     * Renders the current webview panel if it exists otherwise a new webview panel
-     * will be created and displayed.
-     *
-     * @param extensionUri The URI of the directory containing the extension
-     */
     public static render(extensionUri: Uri) {
         if (AgentPanel.currentPanel) {
-            // If the webview panel already exists reveal it
             AgentPanel.currentPanel._panel.reveal(ViewColumn.One);
         } else {
-            // If a webview panel does not already exist create and show a new one
             const panel = window.createWebviewPanel(
-                // Panel view type
                 "showAgentPanel",
-                // Panel title
                 "LISA Agent Manager",
-                // The editor column the panel should be displayed in
                 ViewColumn.One,
-                // Extra panel configurations
                 {
-                    // Enable JavaScript in the webview
                     enableScripts: true,
-                    // Restrict the webview to only load resources from the `out` and `webview-ui/build` directories
                     localResourceRoots: [
                         Uri.joinPath(extensionUri, "out"),
                         Uri.joinPath(extensionUri, "webview-ui/build"),
@@ -61,21 +35,13 @@ export class AgentPanel {
                     ],
                 }
             );
-
             AgentPanel.currentPanel = new AgentPanel(panel, extensionUri);
         }
     }
 
-    /**
-     * Cleans up and disposes of webview resources when the webview panel is closed.
-     */
     public dispose() {
         AgentPanel.currentPanel = undefined;
-
-        // Dispose of the current webview panel
         this._panel.dispose();
-
-        // Dispose of all disposables (i.e. commands) for the current webview panel
         while (this._disposables.length) {
             const disposable = this._disposables.pop();
             if (disposable) {
@@ -84,18 +50,7 @@ export class AgentPanel {
         }
     }
 
-    /**
-     * Defines and returns the HTML that should be rendered within the webview panel.
-     *
-     * @remarks This is also the place where references to the CSS and JavaScript files
-     * are created and inserted into the webview HTML.
-     *
-     * @param webview A reference to the extension webview
-     * @param extensionUri The URI of the directory containing the extension
-     * @returns A template string literal containing the HTML that should be rendered within the webview panel
-     */
     private _getWebviewContent(webview: Webview, extensionUri: Uri) {
-        // Use codicons
         const codiconsUri = webview.asWebviewUri(Uri.joinPath(extensionUri, 'node_modules', '@vscode/codicons', 'dist', 'codicon.css'));
         const logoUri = webview.asWebviewUri(Uri.joinPath(extensionUri, 'assets', 'icon.png'));
 
@@ -105,26 +60,26 @@ export class AgentPanel {
         <head>
           <meta charset="UTF-8">
           <meta name="viewport" content="width=device-width, initial-scale=1.0">
-          <link href="\${codiconsUri}" rel="stylesheet" />
+          <link href="${codiconsUri}" rel="stylesheet" />
           <title>LISA Agent</title>
           <style>
-            :root {
-                --bg-color: var(--vscode-editor-background);
-                --fg-color: var(--vscode-editor-foreground);
-                --border-color: var(--vscode-widget-border);
-                --item-hover: var(--vscode-list-hoverBackground);
-                --input-bg: var(--vscode-input-background);
-                --input-fg: var(--vscode-input-foreground);
-                --primary: var(--vscode-button-background);
-                --secondary: var(--vscode-descriptionForeground);
-                --success: var(--vscode-charts-green);
-                --error: var(--vscode-charts-red);
-                --font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+             :root {
+                --bg-app: #09090b;
+                --bg-panel: #18181b;
+                --bg-input: #27272a;
+                --border: #3f3f46;
+                --text-primary: #e4e4e7;
+                --text-secondary: #a1a1aa;
+                --accent: #3b82f6;
+                --accent-hover: #2563eb;
+                --font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
             }
 
+            * { box-sizing: border-box; }
+            
             body {
-                background-color: var(--bg-color);
-                color: var(--fg-color);
+                background: var(--bg-app);
+                color: var(--text-primary);
                 font-family: var(--font-family);
                 margin: 0;
                 padding: 0;
@@ -132,282 +87,275 @@ export class AgentPanel {
                 display: flex;
                 flex-direction: column;
                 overflow: hidden;
+                font-size: 13px;
             }
 
-            /* Header */
             header {
+                background: var(--bg-app);
                 padding: 12px 16px;
-                border-bottom: 1px solid var(--border-color);
                 display: flex;
                 justify-content: space-between;
                 align-items: center;
-                background-color: var(--vscode-sideBar-background);
+                border-bottom: 1px solid var(--border);
                 flex-shrink: 0;
             }
-            header h2 {
-                margin: 0;
-                font-size: 14px;
+            .header-title {
                 font-weight: 600;
+                font-size: 20px;
                 display: flex;
                 align-items: center;
-                gap: 8px;
+                gap: 12px;
             }
-            .header-controls {
+            .header-title img {
+                width: 48px;
+                height: 48px;
+                object-fit: contain;
+            }
+            .header-actions {
                 display: flex;
                 gap: 8px;
             }
-            .icon-btn {
-                background: none;
+            .header-btn {
+                background: transparent;
                 border: none;
-                color: var(--fg-color);
+                color: var(--text-secondary);
+                font-size: 12px;
                 cursor: pointer;
-                padding: 4px;
+                padding: 4px 8px;
                 border-radius: 4px;
-                display: flex;
-                align-items: center;
-                justify-content: center;
             }
-            .icon-btn:hover {
-                background-color: var(--item-hover);
-            }
+            .header-btn:hover { background: var(--bg-panel); color: var(--text-primary); }
 
-            /* Chat Area */
             #chat-history {
                 flex: 1;
                 overflow-y: auto;
-                padding: 20px;
+                padding: 16px;
                 display: flex;
                 flex-direction: column;
                 gap: 20px;
             }
+            #chat-history:empty {
+                overflow: hidden;
+            }
 
-            /* Message Blocks */
-            .message-block {
+            .welcome-container {
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                justify-content: center;
+                height: 100%;
+                text-align: center;
+                color: var(--text-secondary);
+                opacity: 0.8;
+            }
+            .welcome-text {
+                font-size: 14px;
+                line-height: 1.6;
+                max-width: 260px;
+            }
+            .welcome-text strong {
+                color: var(--text-primary);
+                font-weight: 600;
+            }
+
+            .user-message {
+                align-self: flex-end;
+                background: var(--bg-input);
+                padding: 10px 14px;
+                border-radius: 12px;
+                max-width: 85%;
+                font-size: 13px;
+                line-height: 1.5;
+                color: var(--text-primary);
+            }
+            .agent-message {
+                align-self: flex-start;
+                max-width: 90%;
+                font-size: 13px;
+                line-height: 1.6;
+                color: var(--text-secondary);
+            }
+            .agent-message strong { color: var(--text-primary); font-weight: 600; }
+
+            .starter-chips {
+                    display: flex;
+                    flex-wrap: wrap;
+                    gap: 8px;
+                    padding: 0 16px;
+                    margin-bottom: 20px;
+                    justify-content: center;
+            }
+            .chip-btn {
+                background: var(--bg-panel);
+                border: 1px solid var(--border);
+                color: var(--text-secondary);
+                padding: 6px 12px;
+                border-radius: 16px;
+                font-size: 11px;
+                cursor: pointer;
+                transition: all 0.2s;
+            }
+            .chip-btn:hover {
+                    color: var(--text-primary);
+                    border-color: var(--text-secondary);
+                    background: var(--bg-input);
+            }
+
+            .input-container {
+                padding: 16px;
+                background: var(--bg-app);
+                position: relative;
+                z-index: 10;
+            }
+            .input-box {
+                background: var(--bg-panel);
+                border: 1px solid var(--border);
+                border-radius: 12px;
+                padding: 12px;
                 display: flex;
                 flex-direction: column;
                 gap: 8px;
-                animation: fadeIn 0.3s ease;
-            }
-            @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
-
-            .user-request {
-                border-left: 2px solid var(--primary);
-                padding-left: 12px;
-                margin-bottom: 10px;
-            }
-            .user-request .label {
-                font-size: 11px;
-                color: var(--secondary);
-                text-transform: uppercase;
-                letter-spacing: 0.5px;
-                margin-bottom: 4px;
-            }
-            .user-request .content {
-                font-size: 14px;
-                line-height: 1.4;
-            }
-
-            /* Step Items (Like AntiGravity) */
-            .step-item {
-                display: flex;
-                align-items: center;
-                gap: 10px;
-                padding: 8px 12px;
-                border: 1px solid var(--border-color);
-                background-color: var(--vscode-editorWidget-background);
-                border-radius: 6px;
-                font-size: 13px;
-            }
-            .step-item:hover {
-                 border-color: var(--focus-border, #007fd4);
-            }
-            .step-icon {
-                font-size: 16px;
-                width: 20px;
-                text-align: center;
-            }
-            .step-content {
-                flex: 1;
-                display: flex;
-                flex-direction: column;
-            }
-            .step-title {
-                font-weight: 500;
-            }
-            .step-detail {
-                font-size: 11px;
-                color: var(--secondary);
-                margin-top: 2px;
-            }
-            .step-status {
-                font-size: 11px;
-                padding: 2px 6px;
-                border-radius: 10px;
-                background-color: var(--item-hover);
-            }
-
-            /* Input Area (Bottom) */
-            .input-container {
-                padding: 16px;
-                border-top: 1px solid var(--border-color);
-                background-color: var(--vscode-sideBar-background);
-                flex-shrink: 0;
-            }
-            .input-wrapper {
-                position: relative;
-                background-color: var(--input-bg);
-                border: 1px solid var(--border-color);
-                border-radius: 8px;
-                padding: 2px;
                 transition: border-color 0.2s;
             }
-            .input-wrapper:focus-within {
-                border-color: var(--focus-border, #007fd4);
+            .input-box:focus-within {
+                border-color: #71717a;
+                box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.1);
             }
             textarea {
-                width: 100%;
+                background: transparent;
                 border: none;
-                background: none;
-                color: var(--input-fg);
-                padding: 10px;
-                font-family: inherit;
+                color: var(--text-primary);
+                font-family: var(--font-family);
                 font-size: 13px;
                 resize: none;
                 outline: none;
-                min-height: 40px;
-                box-sizing: border-box;
-                display: block;
+                min-height: 24px;
+                width: 100%;
+                line-height: 1.5;
             }
-            .input-actions {
+            textarea::placeholder { color: #52525b; }
+
+            .input-controls {
                 display: flex;
                 justify-content: space-between;
                 align-items: center;
-                padding: 4px 8px;
-                border-top: 1px solid var(--border-color);
+                padding-top: 4px;
             }
-            
-            /* Agent Selector (Pill style in input) */
-            .agent-pills {
+            .left-controls {
                 display: flex;
+                align-items: center;
                 gap: 6px;
             }
-            .pill {
-                font-size: 11px;
-                padding: 3px 8px;
-                border-radius: 12px;
-                background-color: var(--vscode-badge-background);
-                color: var(--vscode-badge-foreground);
-                cursor: pointer;
-                opacity: 0.6;
-                transition: opacity 0.2s;
-                border: 1px solid transparent;
-            }
-            .pill:hover, .pill.active {
-                opacity: 1;
-                border-color: var(--fg-color);
+            .right-controls {
+                display: flex;
+                align-items: center;
+                gap: 8px;
             }
 
-            button.send-btn {
-                background-color: var(--primary);
-                color: var(--vscode-button-foreground);
+            .pill-btn {
+                background: transparent;
                 border: none;
+                color: var(--text-secondary);
+                font-size: 11px;
+                font-weight: 500;
+                padding: 4px 8px;
                 border-radius: 4px;
-                width: 32px; /* Slightly larger */
-                height: 32px;
+                cursor: pointer;
+                display: flex;
+                align-items: center;
+                gap: 4px;
+                transition: all 0.15s;
+            }
+            .pill-btn:hover { background: var(--bg-input); color: var(--text-primary); }
+            
+            .icon-btn {
+                background: transparent;
+                border: none;
+                color: var(--text-secondary);
+                cursor: pointer;
+                transition: color 0.15s;
+                font-size: 14px;
+            }
+            .icon-btn:hover { color: var(--text-primary); }
+
+            .send-btn {
+                background: var(--bg-input);
+                color: var(--text-primary);
+                border: none;
+                border-radius: 8px;
+                width: 28px;
+                height: 28px;
                 display: flex;
                 align-items: center;
                 justify-content: center;
                 cursor: pointer;
-                transition: background-color 0.2s;
+                transition: all 0.15s;
             }
-            button.send-btn:hover { 
-                background-color: var(--vscode-button-hoverBackground);
-            }
-            button.send-btn svg {
-                width: 16px; 
-                height: 16px;
-                fill: white;
-            }
+            .send-btn:hover { background: var(--text-secondary); color: var(--bg-app); }
+            .send-btn svg { width: 14px; height: 14px; fill: currentColor; }
 
-            /* Settings Overlay */
             .settings-overlay {
                 position: absolute;
-                top: 50px;
-                right: 16px;
+                bottom: 80px;
+                left: 16px;
                 width: 280px;
-                background-color: var(--vscode-editorWidget-background);
-                border: 1px solid var(--border-color);
+                background: var(--bg-panel);
+                border: 1px solid var(--border);
                 border-radius: 8px;
-                box-shadow: 0 4px 12px rgba(0,0,0,0.25);
-                padding: 16px;
-                z-index: 100;
+                padding: 12px;
                 display: none;
+                box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.5);
             }
             .settings-overlay.open { display: block; }
             .form-group { margin-bottom: 12px; }
-            .form-group label { display: block; font-size: 11px; font-weight: 600; margin-bottom: 4px; color: var(--secondary); }
-            .form-group select, .form-group input { 
-                width: 100%; padding: 6px; border-radius: 4px; 
-                border: 1px solid var(--border-color); background: var(--input-bg); color: var(--input-fg);
+            .form-group label {
+                display: block; font-size: 11px; color: var(--text-secondary); margin-bottom: 4px;
             }
-
-            /* Log/Terminal Style blocks */
-            .log-block {
-                background-color: rgba(0,0,0,0.2);
-                border-radius: 4px;
-                padding: 8px 12px;
-                font-family: 'Consolas', 'Courier New', monospace;
-                font-size: 12px;
-                margin-top: 4px;
-                border-left: 3px solid var(--secondary);
-                white-space: pre-wrap;
+            .form-group select, .form-group input {
+                width: 100%; background: var(--bg-app); border: 1px solid var(--border);
+                color: var(--text-primary); padding: 6px; border-radius: 4px; font-size: 12px;
             }
-
-            /* Agent Response */
-            .agent-response {
-                border-left: 2px solid var(--success);
-                padding-left: 12px;
-                margin-bottom: 10px;
-                margin-top: 10px;
-                animation: fadeIn 0.3s ease;
+            .save-btn {
+                width: 100%; background: var(--accent); color: white; border: none;
+                padding: 8px; border-radius: 4px; cursor: pointer; font-size: 12px;
             }
-            .agent-response .label {
-                font-size: 11px;
-                color: var(--success);
-                text-transform: uppercase;
-                letter-spacing: 0.5px;
-                margin-bottom: 4px;
-            }
-            .agent-response .content {
-                font-size: 14px;
-                line-height: 1.5;
-                white-space: pre-wrap;
-            }
-
-        </style>
+          </style>
         </head>
         <body>
           
           <header>
-            <h2><img src="${logoUri}" alt="LISA" style="width:20px; height:20px; vertical-align:middle; margin-right:4px;"> LISA Agent</h2>
-            <div class="header-controls">
-                <button class="icon-btn" id="toggle-settings" title="Configuration">
-                    <span class="codicon codicon-settings-gear"></span>
-                </button>
+            <div class="header-title">
+               <img src="${logoUri}" alt="LISA">
+               <span>LISA Agent</span>
+            </div>
+            <div class="header-actions">
+                <button class="header-btn" id="clear-btn">Clear</button>
             </div>
           </header>
 
-          <div id="settings-panel" class="settings-overlay">
-                <div style="display:flex; justify-content:space-between; margin-bottom:10px;">
-                    <strong>Configuration</strong>
-                    <span class="codicon codicon-close" id="close-settings" style="cursor:pointer;"></span>
+           <div id="chat-history">
+                <div class="welcome-container" id="welcome-screen">
+                     <div class="welcome-text">
+                        Hi! I'm ready to help.<br>
+                        Ask me anything or press <strong>CMD+L</strong> to start.
+                     </div>
                 </div>
+          </div>
+          
+          <div id="starter-area" class="starter-chips">
+               <button class="chip-btn" onclick="quickAction('Explain this code')">Explain Code</button>
+               <button class="chip-btn" onclick="quickAction('Write unit tests for this')">Generate Tests</button>
+               <button class="chip-btn" onclick="quickAction('Find bugs in this')">Find Bugs</button>
+          </div>
+
+          <div class="input-container">
+            <div id="settings-panel" class="settings-overlay">
                 <div class="form-group">
                     <label>Provider</label>
                     <select id="provider-select">
                         <option value="openai">OpenAI</option>
-                        <option value="anthropics">Anthropic (Claude)</option>
-                        <option value="gemini">Google Gemini</option>
+                        <option value="anthropics">Anthropic</option>
+                        <option value="gemini">Gemini</option>
                         <option value="groq">Groq</option>
                     </select>
                 </div>
@@ -417,68 +365,49 @@ export class AgentPanel {
                 </div>
                 <div class="form-group">
                     <label>API Key</label>
-                    <input type="password" id="api-key" placeholder="Saved Securely" />
+                    <input type="password" id="api-key" placeholder="API Key" />
                 </div>
-                <button id="save-config-btn" style="width:100%; padding:6px; cursor:pointer; background:var(--primary); color:white; border:none; border-radius:4px;">Save Config</button>
-          </div>
-
-          <!-- Chat Feed -->
-          <div id="chat-history">
-              <!-- Initial Greeting -->
-              <div class="step-item">
-                  <div class="step-icon">👋</div>
-                  <div class="step-content">
-                      <div class="step-title">Welcome to LISA</div>
-                      <div class="step-detail">I'm ready to help you code. Select an agent capability below.</div>
-                  </div>
-              </div>
-          </div>
-
-          <!-- Input Area -->
-          <div class="input-container">
-            <div class="input-wrapper">
-                <textarea id="instruction" rows="2" placeholder="Ask me anything or describe a task..."></textarea>
-                <div class="input-actions">
-                    <div class="agent-pills">
-                        <div class="pill active" data-value="chat">Chat</div>
-                        <div class="pill" data-value="generateTests">Test Gen</div>
-                        <div class="pill" data-value="addJsDoc">Docs</div>
-                        <div class="pill" data-value="refactor">Refactor</div>
-                    </div>
-                    <button class="send-btn" id="run-btn" title="Send Message">
-                        <svg viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg"><path d="M1.72365 1.57467C1.19662 1.34026 0.655953 1.8817 0.891391 2.40871L3.08055 7.30906C3.12067 7.39886 3.12066 7.50207 3.08054 7.59187L0.891392 12.4922C0.655953 13.0192 1.19662 13.5607 1.72366 13.3262L14.7762 7.5251C15.32 7.28315 15.32 6.51778 14.7762 6.27583L1.72365 1.57467Z"/></svg>
-                    </button>
-                </div>
+                <button class="save-btn" id="save-config-btn">Save</button>
             </div>
-            <div style="font-size:11px; color:var(--secondary); margin-top:8px; display:flex; justify-content:space-between;">
-                <span id="context-indicator">No Context</span>
-                <span>LISA v1.0.8</span>
+
+            <div class="input-box">
+                <textarea id="instruction" placeholder="Ask anything or help with what our LISA can do."></textarea>
+                
+                <div class="input-controls">
+                    <div class="left-controls">
+                        <button class="pill-btn" id="model-btn">
+                            Gemini 3 Pro <span>⌄</span>
+                        </button>
+                    </div>
+                    <div class="right-controls">
+                        <button class="icon-btn" id="mic-btn">🎤</button>
+                        <button class="send-btn" id="run-btn">
+                            <svg viewBox="0 0 16 16"><path d="M1.72365 1.57467C1.19662 1.34026 0.655953 1.8817 0.891391 2.40871L3.08055 7.30906C3.12067 7.39886 3.12066 7.50207 3.08054 7.59187L0.891392 12.4922C0.655953 13.0192 1.19662 13.5607 1.72366 13.3262L14.7762 7.5251C15.32 7.28315 15.32 6.51778 14.7762 6.27583L1.72365 1.57467Z"/></svg>
+                        </button>
+                    </div>
+                </div>
             </div>
           </div>
 
           <script>
             const vscode = acquireVsCodeApi();
             
-            // DOM Elements
             const chatHistory = document.getElementById('chat-history');
             const instructionInput = document.getElementById('instruction');
             const runBtn = document.getElementById('run-btn');
-            const pills = document.querySelectorAll('.pill');
-            const contextIndicator = document.getElementById('context-indicator');
+            const micBtn = document.getElementById('mic-btn');
+            const clearBtn = document.getElementById('clear-btn');
             
             const settingsPanel = document.getElementById('settings-panel');
-            const toggleSettings = document.getElementById('toggle-settings');
-            const closeSettings = document.getElementById('close-settings');
-            const saveConfig = document.getElementById('save-config-btn');
+            const modelBtn = document.getElementById('model-btn');
+            const saveConfigBtn = document.getElementById('save-config-btn');
             const providerSelect = document.getElementById('provider-select');
             const modelSelect = document.getElementById('model-select');
             const apiKeyInput = document.getElementById('api-key');
 
             let currentAgent = 'chat';
-            let lastLoadingId = '';
-
-            // --- Config Logic ---
-            const models = {
+            
+             const models = {
                 'openai': ['gpt-4-turbo', 'gpt-4o', 'gpt-3.5-turbo'],
                 'anthropics': ['claude-3-opus-20240229', 'claude-3-sonnet-20240229', 'claude-3-haiku-20240307'],
                 'gemini': ['gemini-1.5-pro', 'gemini-1.5-flash', 'gemini-pro'],
@@ -487,15 +416,23 @@ export class AgentPanel {
 
             function updateModels() {
                 const p = providerSelect.value;
-                modelSelect.innerHTML = (models[p] || []).map(m => \`<option value="\${m}">\${m}</option>\`).join('');
+                if (models[p]) {
+                    modelSelect.innerHTML = models[p].map(m => \`<option value="\${m}">\${m}</option>\`).join('');
+                }
+                const currentModel = modelSelect.value || 'Model';
+                let displayName = currentModel.split('-').map(s => s.charAt(0).toUpperCase() + s.slice(1)).join(' ');
+                displayName = displayName.replace('Gpt', 'GPT').replace('Claude', 'Claude').replace('Gemini', 'Gemini');
+                if (displayName.length > 15) displayName = displayName.substring(0, 12) + '...';
+                
+                document.querySelector('#model-btn').innerHTML = \`\${displayName} <span>⌄</span>\`;
             }
+
             providerSelect.addEventListener('change', updateModels);
-            updateModels();
-
-            toggleSettings.onclick = () => settingsPanel.classList.toggle('open');
-            closeSettings.onclick = () => settingsPanel.classList.remove('open');
-
-            saveConfig.onclick = () => {
+            modelSelect.addEventListener('change', updateModels);
+            
+            modelBtn.onclick = () => settingsPanel.classList.toggle('open');
+            
+            saveConfigBtn.onclick = () => {
                 vscode.postMessage({
                     command: 'saveConfig',
                     provider: providerSelect.value,
@@ -503,24 +440,48 @@ export class AgentPanel {
                     apiKey: apiKeyInput.value
                 });
                 settingsPanel.classList.remove('open');
-                addStep('Config Saved', \`Provider: \${providerSelect.value}\`, 'check');
+                updateModels();
             };
 
-            // --- Chat Logic ---
-            pills.forEach(p => {
-                p.onclick = () => {
-                    pills.forEach(all => all.classList.remove('active'));
-                    p.classList.add('active');
-                    currentAgent = p.dataset.value;
-                    const map = {
-                        'chat': 'Ask me anything...',
-                        'generateTests': 'What should I test? (e.g. edge cases)',
-                        'addJsDoc': 'Which functions need docs?',
-                        'refactor': 'How should I refactor this?'
-                    };
-                    instructionInput.placeholder = map[currentAgent] || 'Enter instructions...';
-                };
+            clearBtn.onclick = () => {
+                chatHistory.innerHTML = '';
+            };
+
+            instructionInput.addEventListener('input', function() {
+                this.style.height = 'auto';
+                this.style.height = (this.scrollHeight) + 'px';
             });
+
+            function submit() {
+                const text = instructionInput.value.trim();
+                if (!text) return;
+                
+                const starterArea = document.getElementById('starter-area');
+                if (starterArea) starterArea.style.display = 'none';
+                
+                const welcome = document.getElementById('welcome-screen');
+                if (welcome) welcome.remove();
+                
+                const userDiv = document.createElement('div');
+                userDiv.className = 'user-message';
+                userDiv.textContent = text;
+                chatHistory.appendChild(userDiv);
+                
+                instructionInput.value = '';
+                instructionInput.style.height = 'auto';
+                scrollToBottom();
+                
+                vscode.postMessage({
+                    command: 'runAgent',
+                    agent: currentAgent,
+                    instruction: text
+                });
+            }
+
+            window.quickAction = function(text) {
+                instructionInput.value = text;
+                submit();
+            };
 
             runBtn.onclick = submit;
             instructionInput.onkeydown = (e) => {
@@ -529,128 +490,85 @@ export class AgentPanel {
                     submit();
                 }
             };
-
-            function submit() {
-                const text = instructionInput.value.trim();
-                if(!text) return;
-
-                // Add User Message
-                const userDiv = document.createElement('div');
-                userDiv.className = 'user-request';
-                userDiv.innerHTML = \`<div class="label">YOU</div><div class="content">\${text}</div>\`;
-                chatHistory.appendChild(userDiv);
-                
-                // Clear Input
-                instructionInput.value = '';
-
-                // Indicate Processing
-                lastLoadingId = 'loading-' + Date.now();
-                const loadingStep = createStepElement('Thinking...', \`\${currentAgent} is working...\`, 'loading', lastLoadingId);
-                chatHistory.appendChild(loadingStep);
-                scrollToBottom();
-
-                // Send to Extension
-                vscode.postMessage({
-                    command: 'runAgent',
-                    agent: currentAgent,
-                    instruction: text
-                });
-            }
-
-            function addStep(title, detail, icon, id) {
-                const step = createStepElement(title, detail, icon, id);
-                chatHistory.appendChild(step);
-                scrollToBottom();
-            }
-
-            function createStepElement(title, detail, iconType, id) {
-                const div = document.createElement('div');
-                div.className = 'step-item';
-                if(id) div.id = id;
-                
-                let icon = '⚪';
-                if(iconType === 'check') icon = '✅';
-                if(iconType === 'error') icon = '❌';
-                if(iconType === 'loading') icon = '⏳';
-                if(iconType === 'info') icon = 'ℹ️';
-
-                div.innerHTML = \`
-                    <div class="step-icon">\${icon}</div>
-                    <div class="step-content">
-                        <div class="step-title">\${title}</div>
-                        \${detail ? \`<div class="step-detail">\${detail}</div>\` : ''}
-                    </div>
-                \`;
-                return div;
-            }
+            
+            window.addEventListener('keydown', (e) => {
+                if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'l') {
+                    e.preventDefault();
+                    instructionInput.focus();
+                }
+            });
 
             function scrollToBottom() {
                 chatHistory.scrollTop = chatHistory.scrollHeight;
             }
 
-            // --- Listeners ---
             window.addEventListener('message', event => {
                 const msg = event.data;
-                if(msg.command === 'updateContext') {
-                    contextIndicator.innerText = msg.text.split('\\n')[0]; // Simple file name
-                }
-                if(msg.command === 'loadConfig') {
+                
+                if (msg.command === 'loadConfig') {
                     if(msg.provider) providerSelect.value = msg.provider;
-                    updateModels();
+                     updateModels(); 
                     if(msg.model) modelSelect.value = msg.model;
                     if(msg.apiKey) apiKeyInput.value = msg.apiKey;
                 }
-                
+
                 if (msg.command === 'agentResponse') {
-                    const loading = document.getElementById(lastLoadingId);
-                    if (loading) loading.remove();
-
-                    const res = msg.data;
-                    if (res.success) {
-                        // Show text response
-                        const div = document.createElement('div');
-                        div.className = 'agent-response';
-                        const text = typeof res.data === 'string' ? res.data : (res.message || JSON.stringify(res.data));
-                        div.innerHTML = \`<div class="label">LISA</div><div class="content">\${text}</div>\`;
-                        chatHistory.appendChild(div);
-
-                        if (currentAgent !== 'chat') {
-                             addStep('Finished', 'Task completed successfully', 'check');
-                        }
+                    const result = msg.data || {};
+                    if (result.success) {
+                        const responseDiv = document.createElement('div');
+                        responseDiv.className = 'agent-message';
+                        let content = typeof result.data === 'string' ? result.data : JSON.stringify(result.data);
+                        content = content.replace(/\\*\\*(.*?)\\*\\*/g, '<strong>$1</strong>');
+                        content = content.replace(/\`(.*?)\`/g, '<code style="background:#333;padding:2px 4px;border-radius:3px;">$1</code>');
+                        
+                        responseDiv.innerHTML = \`<strong>LISA</strong><br>\${content}\`;
+                        chatHistory.appendChild(responseDiv);
                     } else {
-                        // Nice Error Handling
-                        let errorMsg = res.error || 'Unknown Error';
-                        let detail = '';
-                        
-                        if (errorMsg.includes('API Key') || errorMsg.includes('401')) {
-                            detail = 'Invalid API Key or Auth Error. Check settings.';
-                            // Automatically open settings if it's an auth error
-                            settingsPanel.classList.add('open');
-                        } else if (errorMsg.includes('ENOTFOUND') || errorMsg.includes('fetch failed')) {
-                             detail = 'Network Error. Check internet connection or VPN.';
-                        } else {
-                            // Trim really long stack traces
-                            if (errorMsg.length > 200) errorMsg = errorMsg.substring(0, 200) + '...';
-                        }
-                        
-                        addStep('Error', \`\${detail} \${errorMsg}\`, 'error');
+                        const errDiv = document.createElement('div');
+                        errDiv.className = 'agent-message';
+                        errDiv.style.color = '#ef4444';
+                        errDiv.textContent = \`Error: \${result.error || 'Unknown'}\`;
+                        chatHistory.appendChild(errDiv);
                     }
                     scrollToBottom();
                 }
             });
 
-            // Init
             vscode.postMessage({ command: 'requestConfig' });
-
+            
+            if (window.webkitSpeechRecognition || window.SpeechRecognition) {
+                 const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+                 const recognition = new SpeechRecognition();
+                 recognition.continuous = false;
+                 
+                 micBtn.onclick = () => {
+                    if (micBtn.classList.contains('listening')) {
+                        recognition.stop();
+                    } else {
+                        recognition.start();
+                    }
+                 };
+                 recognition.onstart = () => {
+                     micBtn.classList.add('listening');
+                     micBtn.style.color = '#ef4444';
+                 };
+                 recognition.onend = () => {
+                     micBtn.classList.remove('listening');
+                     micBtn.style.color = '';
+                 };
+                 recognition.onresult = (e) => {
+                     const t = e.results[0][0].transcript;
+                     instructionInput.value += (instructionInput.value ? ' ' : '') + t;
+                 };
+            } else {
+                micBtn.style.display = 'none';
+            }
           </script>
         </body>
       </html>
     `;
     }
 
-    /**
-     * Sets up an event listener to listen for messages passed from the webview context.
-     */
     private _setWebviewMessageListener(webview: Webview) {
         webview.onDidReceiveMessage(
             (message: any) => {
