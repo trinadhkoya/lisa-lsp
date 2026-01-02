@@ -1,6 +1,6 @@
 # LISA AI Assistant
 
-> **L**ocalization & **I**ntelligence **S**upport **A**ssistant
+> **L**anguage-**I**ntegrated **S**mart **A**gent
 
 LISA is an AI-powered coding assistant that integrates seamlessly with VS Code and IntelliJ-based IDEs (WebStorm, IntelliJ IDEA, PyCharm, etc.). Get intelligent code assistance, generate tests, add documentation, and refactor code with the power of multiple AI providers.
 

@@ -18,7 +18,7 @@
 - [ ] Configure the [CODECOV_TOKEN](https://docs.codecov.com/docs/quick-start) secret for automated test coverage reports on PRs
 
 <!-- Plugin description -->
-LISA (Localization & Intelligence Support Assistant) is a powerful AI companion designed to help you code faster and more efficiently.
+LISA (Language-Integrated Smart Agent) is a powerful AI companion designed to help you code faster and more efficiently.
 
 <h3>Features</h3>
 <ul>
