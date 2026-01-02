@@ -39,22 +39,111 @@ Object.defineProperty(exports, "__esModule", { value: true });
 process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
 const node_1 = require("vscode-languageserver/node");
 const vscode_languageserver_textdocument_1 = require("vscode-languageserver-textdocument");
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-const JiraClient = require('jira-client'); // Using require to avoid type issues
 const fs = __importStar(require("fs"));
 const path = __importStar(require("path"));
-const logFile = path.resolve(__dirname, '../server.log');
-function debugLog(msg) {
-    fs.appendFileSync(logFile, `[${new Date().toISOString()}] ${msg}\n`);
-}
-debugLog('Server process started');
-// Load environment variables
-const config_1 = require("./config");
 const node_2 = require("@gitbeaker/node");
 const openai_1 = __importDefault(require("openai"));
 const generative_ai_1 = require("@google/generative-ai");
 const sdk_1 = __importDefault(require("@anthropic-ai/sdk"));
-// Initialize API clients
+const config_1 = require("./config");
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const JiraClient = require('jira-client');
+// --- Logging Utility ---
+const logFile = path.resolve(__dirname, '../server.log');
+function debugLog(msg) {
+    const timestamp = new Date().toISOString();
+    fs.appendFileSync(logFile, `[${timestamp}] ${msg}\n`);
+}
+debugLog('Server process started (Refactored Version)');
+let currentConfig = {
+    provider: 'openai',
+    apiKey: config_1.OPENAI_API_KEY,
+    model: 'gpt-4-turbo-preview'
+};
+class OpenAiProvider {
+    client = null;
+    currentKey = '';
+    baseURL;
+    constructor(baseURL) {
+        this.baseURL = baseURL;
+    }
+    async generate(messages, model, apiKey) {
+        if (!this.client || this.currentKey !== apiKey) {
+            debugLog(`Initializing OpenAI client (BaseURL: ${this.baseURL || 'Default'})`);
+            this.client = new openai_1.default({ apiKey, baseURL: this.baseURL });
+            this.currentKey = apiKey;
+        }
+        const completion = await this.client.chat.completions.create({
+            messages: messages.map(m => ({ role: m.role, content: m.content })),
+            model: model
+        });
+        return completion.choices[0].message.content || '';
+    }
+}
+class GeminiProvider {
+    async generate(messages, model, apiKey) {
+        debugLog('Initializing Gemini request');
+        const genAI = new generative_ai_1.GoogleGenerativeAI(apiKey);
+        const genModel = genAI.getGenerativeModel({ model: model || 'gemini-1.5-flash' });
+        const systemPrompt = messages.find(m => m.role === 'system')?.content || '';
+        const userPrompt = messages.find(m => m.role === 'user')?.content || '';
+        const fullPrompt = systemPrompt ? `${systemPrompt}\n\nUser: ${userPrompt}` : userPrompt;
+        const result = await genModel.generateContent(fullPrompt);
+        return result.response.text();
+    }
+}
+class ClaudeProvider {
+    client = null;
+    currentKey = '';
+    async generate(messages, model, apiKey) {
+        if (!this.client || this.currentKey !== apiKey) {
+            debugLog('Initializing Claude client');
+            this.client = new sdk_1.default({ apiKey });
+            this.currentKey = apiKey;
+        }
+        const system = messages.find(m => m.role === 'system')?.content;
+        const userMessages = messages
+            .filter(m => m.role !== 'system')
+            .map(m => ({
+            role: m.role === 'user' ? 'user' : 'assistant',
+            content: m.content
+        }));
+        const response = await this.client.messages.create({
+            model: model,
+            system: system,
+            messages: userMessages,
+            max_tokens: 4096
+        });
+        const textContent = response.content.find(c => c.type === 'text');
+        return textContent && 'text' in textContent ? textContent.text : '';
+    }
+}
+// --- Provider Factory ---
+const providers = {
+    'openai': new OpenAiProvider(),
+    'groq': new OpenAiProvider('https://api.groq.com/openai/v1'),
+    'gemini': new GeminiProvider(),
+    'claude': new ClaudeProvider()
+};
+async function callAi(messages) {
+    const { provider, apiKey, model } = currentConfig;
+    debugLog(`callAi: provider=${provider}, model=${model}, hasKey=${!!apiKey}`);
+    if (!apiKey)
+        throw new Error(`API Key for ${provider} is missing. Please configure it.`);
+    const handler = providers[provider];
+    if (!handler)
+        throw new Error(`Unsupported provider: ${provider}`);
+    try {
+        const result = await handler.generate(messages, model, apiKey);
+        debugLog(`callAi: Success (len=${result.length})`);
+        return result;
+    }
+    catch (error) {
+        debugLog(`callAi ERROR: ${error}`);
+        throw error;
+    }
+}
+// --- External Service Clients ---
 const gitlab = new node_2.Gitlab({ token: config_1.GITLAB_TOKEN, host: config_1.GITLAB_HOST });
 const jira = new JiraClient({
     protocol: 'https',
@@ -64,243 +153,136 @@ const jira = new JiraClient({
     apiVersion: '2',
     strictSSL: false
 });
-const openai = new openai_1.default({ apiKey: config_1.OPENAI_API_KEY });
-let currentConfig = {
-    provider: 'openai',
-    apiKey: config_1.OPENAI_API_KEY,
-    model: 'gpt-4-turbo-preview'
-};
-async function callAi(messages, responseFormat) {
-    const { provider, apiKey, model } = currentConfig;
-    if (!apiKey) {
-        throw new Error(`API Key for ${provider} is missing. Please configure it in settings.`);
-    }
-    if (provider === 'openai' || provider === 'groq') {
-        const baseURL = provider === 'groq' ? 'https://api.groq.com/openai/v1' : undefined;
-        const client = new openai_1.default({ apiKey, baseURL });
-        const completion = await client.chat.completions.create({
-            messages,
-            model,
-            response_format: responseFormat
-        });
-        return completion.choices[0].message.content || '';
-    }
-    if (provider === 'gemini') {
-        const genAI = new generative_ai_1.GoogleGenerativeAI(apiKey);
-        const genModel = genAI.getGenerativeModel({ model: model || 'gemini-1.5-flash' });
-        const systemPrompt = messages.find(m => m.role === 'system')?.content || '';
-        const userPrompt = messages.find(m => m.role === 'user')?.content || '';
-        const fullPrompt = systemPrompt ? `${systemPrompt}\n\nUser: ${userPrompt}` : userPrompt;
-        const result = await genModel.generateContent(fullPrompt);
-        return result.response.text();
-    }
-    if (provider === 'claude') {
-        const anthropic = new sdk_1.default({ apiKey });
-        const system = messages.find(m => m.role === 'system')?.content;
-        const userMessages = messages.filter(m => m.role !== 'system').map(m => ({
-            role: m.role === 'user' ? 'user' : 'assistant',
-            content: m.content
-        }));
-        const response = await anthropic.messages.create({
-            model,
-            system,
-            messages: userMessages,
-            max_tokens: 4096
-        });
-        // Handle different content types in Anthropic response
-        const textContent = response.content.find(c => c.type === 'text');
-        return textContent && 'text' in textContent ? textContent.text : '';
-    }
-    throw new Error(`Unsupported provider: ${provider}`);
-}
-// Create a connection for the server. The client (IDE) will connect to this.
-const connection = (0, node_1.createConnection)(node_1.ProposedFeatures.all); // No watchDog needed with node version
-// Create a simple text document manager.
-const documents = new node_1.TextDocuments(vscode_languageserver_textdocument_1.TextDocument);
-documents.listen(connection);
-// The server capabilities are sent back to the client during the initialize request.
-connection.onInitialize((params) => {
-    debugLog('Received initialize request');
-    return {
-        capabilities: {
-            textDocumentSync: node_1.TextDocumentSyncKind.Incremental,
-        }
-    };
-});
-// Handle the initialized notification from client
-connection.onInitialized(() => {
-    debugLog('Received initialized notification');
-    connection.console.log('Client initialized');
-});
-// Update configuration (API Key, Model, Provider)
-connection.onRequest('lisa/updateConfig', (config) => {
-    currentConfig = { ...currentConfig, ...config };
-    debugLog(`Config updated: ${JSON.stringify({ ...currentConfig, apiKey: '***' })}`);
-    return { success: true };
-});
-/**
- * TOOL HELPERS
- */
-async function performCodeReview(params) {
-    const { uri, mrUrl, branchName } = params;
-    debugLog(`Review logic: URI=${uri}, URL=${mrUrl}, Branch=${branchName}`);
-    let projectId = process.env.GITLAB_PROJECT_ID;
-    let mrIid = process.env.GITLAB_MR_IID;
-    if (mrUrl) {
-        const urlPath = mrUrl.replace(/^https?:\/\/[^\/]+\//, '');
-        const match = urlPath.match(/(.+)\/-\/merge_requests\/(\d+)/);
-        if (match) {
-            projectId = match[1];
-            mrIid = match[2];
-        }
-        else {
-            const simpleMatch = mrUrl.match(/\/merge_requests\/(\d+)/);
-            if (simpleMatch)
-                mrIid = simpleMatch[1];
-        }
-    }
-    else if (branchName && projectId) {
-        const mrs = await gitlab.MergeRequests.all({ projectId, sourceBranch: branchName, state: 'opened' });
-        if (mrs.length > 0)
-            mrIid = mrs[0].iid;
-    }
-    if (!projectId || !mrIid) {
-        throw new Error('Unable to identify Merge Request. Please provide a full MR URL or branch name.');
-    }
-    const mrChanges = await gitlab.MergeRequests.changes(projectId, Number(mrIid));
-    const diffs = (mrChanges.changes || []).map((c) => `File: ${c.new_path}\nDiff:\n${c.diff}`).join('\n\n');
-    if (!diffs || diffs.trim() === '')
-        return { success: true, message: 'No changes found to review.' };
-    const reviewComment = await callAi([
-        {
-            role: 'system',
-            content: 'Review code changes like a senior dev: concise, punchy, and high-impact. Focus ONLY on critical bugs, security risks, or major performance wins. Keep it "miniskirt" style: short enough to be interesting, long enough to cover the context.'
-        },
-        { role: 'user', content: diffs }
-    ]);
-    await gitlab.MergeRequestNotes.create(projectId, Number(mrIid), `### 🤖 AI Code Review\n\n${reviewComment}`);
-    return { success: true, message: `AI review posted for MR ${mrIid}.` };
-}
-async function createJiraIssue(payload) {
-    const issue = await jira.addNewIssue({
-        fields: {
-            project: { key: payload.projectKey },
-            summary: payload.summary,
-            description: payload.description,
-            issuetype: { name: 'Task' }
-        }
-    });
-    return { success: true, issueKey: issue.key };
-}
-async function createGitLabMR(payload) {
-    const projectId = process.env.GITLAB_PROJECT_ID;
-    if (!projectId)
-        throw new Error('GitLab project ID not set');
-    const mr = await gitlab.MergeRequests.create(projectId, payload.sourceBranch, payload.targetBranch, payload.title);
-    return { success: true, mrId: mr.iid };
-}
-/**
- * REQUEST HANDLERS
- */
-// Agentic Execute Handler: Understands natural language commands
-// Helper to extract code from context
-function getCodeContext(context) {
-    return context?.selection || context?.fileContent || '';
-}
-async function generateTests(context) {
-    const code = getCodeContext(context);
+// --- Logic Handlers ---
+async function handleGenerateTests(code, context) {
     if (!code)
-        return { success: false, error: 'No code selected or file is empty.' };
-    const existingTestContent = context.existingTestContent || '';
-    const fileStructureInfo = context.fileStructureInfo || '';
-    const systemPrompt = `You are a QA automation expert. Generate comprehensive unit tests for the provided code.
-    
+        throw new Error('No code context provided.');
+    const existingTest = context.existingTestContent || '';
+    const fileStructure = context.fileStructureInfo || '';
+    const systemPrompt = `You are a QA automation expert. Generate comprehensive unit tests.
     RULES:
-    1. Use the testing framework appropriate for the language (e.g., Jest/Mocha for JS/TS, JUnit for Java).
+    1. Use simple, standard frameworks (Jest, JUnit, etc.).
     2. Return ONLY the code.
-    3. ${existingTestContent ? `Follow the coding style, imports, and structure of this EXISTING test file found in the project:\n\n${existingTestContent}\n\n` : ''}
-    4. ${fileStructureInfo ? `File Structure Context:\n${fileStructureInfo}` : ''}
-    5. Ensure imports are correct based on the file structure provided. Do not use placeholders like "path/to/module" if you can infer the relative path.`;
-    const tests = await callAi([
+    3. ${existingTest ? `Follow style of:\n${existingTest}\n` : ''}
+    4. ${fileStructure ? `File Context:\n${fileStructure}` : ''}`;
+    return await callAi([
         { role: 'system', content: systemPrompt },
         { role: 'user', content: code }
     ]);
-    return { success: true, message: 'Tests generated.', data: tests, action: 'generateTests' };
 }
-async function addJsDoc(context) {
-    const code = getCodeContext(context);
+async function handleAddJsDoc(code) {
     if (!code)
-        return { success: false, error: 'No code selected.' };
-    const documentedCode = await callAi([
-        { role: 'system', content: 'You are a documentation expert. Add JSDoc/Docstrings to the provided code. Document all parameters, return types, and exceptions. Return the FULL code with comments added.' },
+        throw new Error('No code context provided.');
+    return await callAi([
+        { role: 'system', content: 'You are a documentation expert. Add JSDoc/Docstrings. Return ONLY the FULL code with comments.' },
         { role: 'user', content: code }
     ]);
-    return { success: true, message: 'Documentation added.', data: documentedCode, action: 'addJsDoc' };
 }
-async function refactorCode(context, instruction) {
-    const code = getCodeContext(context);
+async function handleRefactor(code, instruction) {
     if (!code)
-        return { success: false, error: 'No code selected.' };
-    const refactored = await callAi([
-        { role: 'system', content: `Refactor the code based on the user's instruction. Maintain logic but improve structure/performance/readability. Return ONLY the code.` },
+        throw new Error('No code context provided.');
+    return await callAi([
+        { role: 'system', content: 'Refactor code based on instructions. Improve structure/readability. Return ONLY the code.' },
         { role: 'user', content: `Code:\n${code}\n\nInstruction: ${instruction}` }
     ]);
-    return { success: true, message: 'Code refactored.', data: refactored, action: 'refactor' };
 }
-// Agentic Execute Handler: Understands natural language commands
-connection.onRequest('lisa/execute', async (params) => {
-    // Support both legacy string command and new object format
-    const command = typeof params === 'string' ? params : params.command;
-    const context = typeof params === 'string' ? {} : params.context;
-    debugLog(`Agentic execute: ${command}`);
-    try {
-        const interpretation = await callAi([
-            {
-                role: 'system',
-                content: `You are LISA (Localization & Intelligence Support Assistant), a developer tool. 
-                Map the user command to one of these actions:
-                1. "review": { "mrUrl": "URL", "branchName": "branch" }
-                2. "jiraCreate": { "summary": "text", "description": "text", "projectKey": "key" }
-                3. "gitlabMR": { "sourceBranch": "text", "targetBranch": "text", "title": "text" }
-                4. "generateTests": {}
-                5. "addJsDoc": {}
-                6. "refactor": { "instruction": "user instruction" }
-                
-                Return ONLY a raw JSON object with "action" and "params". 
-                Do NOT use markdown code blocks or backticks.
-                If "review" and a URL is found, put it in "mrUrl". 
-                If no obvious action, return { "action": "unknown", "params": {} }.`
-            },
-            { role: 'user', content: command }
-        ]); // Removed strict json_object mode for compatibility
-        // Clean up potential markdown code blocks if the model adds them
-        const cleanJson = (interpretation || '{}').replace(/```json/g, '').replace(/```/g, '').trim();
-        const res = JSON.parse(cleanJson);
-        debugLog(`Interpreted: ${JSON.stringify(res)}`);
-        switch (res.action) {
-            case 'review': return await performCodeReview(res.params);
-            case 'jiraCreate':
-                const jiraParams = {
-                    ...res.params,
-                    projectKey: res.params.projectKey || process.env.JIRA_PROJECT_KEY || 'DOVS'
-                };
-                return await createJiraIssue(jiraParams);
-            case 'gitlabMR': return await createGitLabMR(res.params);
-            case 'generateTests': return await generateTests(context);
-            case 'addJsDoc': return await addJsDoc(context);
-            case 'refactor': return await refactorCode(context, res.params.instruction || command);
-            default:
-                const chatResponse = await callAi([{ role: 'user', content: command }]);
-                return { success: true, data: chatResponse, message: 'Chat received' };
+// --- Server Setup ---
+const connection = (0, node_1.createConnection)(node_1.ProposedFeatures.all);
+const documents = new node_1.TextDocuments(vscode_languageserver_textdocument_1.TextDocument);
+documents.listen(connection);
+connection.onInitialize((params) => {
+    debugLog('Initialized');
+    return {
+        capabilities: {
+            textDocumentSync: node_1.TextDocumentSyncKind.Incremental,
+            executeCommandProvider: {
+                commands: ['lisa.chat']
+            }
+        }
+    };
+});
+// --- LSP Request Handlers ---
+connection.onRequest('lisa/updateConfig', (config) => {
+    currentConfig = { ...currentConfig, ...config };
+    debugLog(`Config updated: ${currentConfig.provider} / ${currentConfig.model}`);
+    return { success: true };
+});
+connection.onExecuteCommand(async (params) => {
+    debugLog(`ExecuteCommand: ${params.command}`);
+    if (params.command === 'lisa.chat') {
+        const [prompt, context] = params.arguments || [];
+        const userPrompt = String(prompt || '');
+        const ctx = context || {};
+        try {
+            // Check for explicit commands in prompt first
+            // This allows the chat interface to trigger actions naturally
+            // NOTE: Ideally we would use the intent classification again here
+            // reusing the logic from the old lisa/execute
+            return await callAi([{ role: 'user', content: userPrompt }]);
+        }
+        catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            debugLog(`Command Error: ${msg}`);
+            return `ERROR: ${msg}`;
         }
     }
+    return null;
+});
+// Legacy/Rich Request Handler (Backwards Compatibility & Fancy Features)
+connection.onRequest('lisa/execute', async (params) => {
+    const command = typeof params === 'string' ? params : params.command;
+    const context = typeof params === 'string' ? {} : params.context;
+    const requestId = params.requestId || Date.now().toString();
+    debugLog(`lisa/execute: ${command}`);
+    try {
+        // AI Intent Classification
+        const classification = await callAi([
+            {
+                role: 'system',
+                content: `Classify the user intent into JSON:
+                { "action": "generateTests" | "addJsDoc" | "refactor" | "chat", "params": {} }
+                For "refactor", include "instruction".
+                Default to "chat". Return ONLY raw JSON.`
+            },
+            { role: 'user', content: command }
+        ]);
+        let intent;
+        try {
+            intent = JSON.parse(classification.replace(/```json|```/g, '').trim());
+        }
+        catch {
+            intent = { action: 'chat' };
+        }
+        debugLog(`Intent: ${JSON.stringify(intent)}`);
+        let result;
+        const code = context.selection || context.fileContent || '';
+        switch (intent.action) {
+            case 'generateTests':
+                result = await handleGenerateTests(code, context);
+                break;
+            case 'addJsDoc':
+                result = await handleAddJsDoc(code);
+                break;
+            case 'refactor':
+                result = await handleRefactor(code, intent.params?.instruction || command);
+                break;
+            default:
+                result = await callAi([{ role: 'user', content: command }]);
+        }
+        // Return structured result for client
+        const responseData = { success: true, data: result, action: intent.action };
+        // Notify client (legacy pattern)
+        connection.sendNotification('lisa/executeResult', { requestId, result: responseData });
+        return { acknowledged: true, requestId };
+    }
     catch (err) {
-        connection.console.error(`Execute error: ${err}`);
-        return { success: false, error: err instanceof Error ? err.message : String(err) };
+        const errorMsg = err instanceof Error ? err.message : String(err);
+        debugLog(`lisa/execute error: ${errorMsg}`);
+        connection.sendNotification('lisa/executeResult', {
+            requestId,
+            result: { success: false, error: errorMsg }
+        });
+        return { acknowledged: true, error: true };
     }
 });
-connection.onRequest('lisa/review', (params) => performCodeReview(typeof params === 'string' ? { uri: params } : params));
-connection.onRequest('lisa/jiraCreate', (params) => createJiraIssue(params));
-connection.onRequest('lisa/gitlabMR', (params) => createGitLabMR(params));
-// Listen on the standard input/output streams.
 connection.listen();
