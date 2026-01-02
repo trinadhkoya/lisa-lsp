@@ -207,6 +207,11 @@ connection.onRequest('lisa/updateConfig', (config) => {
     debugLog(`Config updated: ${currentConfig.provider} / ${currentConfig.model}`);
     return { success: true };
 });
+connection.onRequest('lisa/configure', (config) => {
+    currentConfig = { ...currentConfig, ...config };
+    debugLog(`Config updated (via configure): ${currentConfig.provider} / ${currentConfig.model}`);
+    return { success: true };
+});
 connection.onExecuteCommand(async (params) => {
     debugLog(`ExecuteCommand: ${params.command}`);
     if (params.command === 'lisa.chat') {

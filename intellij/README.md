@@ -18,11 +18,17 @@
 - [ ] Configure the [CODECOV_TOKEN](https://docs.codecov.com/docs/quick-start) secret for automated test coverage reports on PRs
 
 <!-- Plugin description -->
-This Fancy IntelliJ Platform Plugin is going to be your implementation of the brilliant ideas that you have.
+LISA (Localization & Intelligence Support Assistant) is a powerful AI companion designed to help you code faster and more efficiently.
 
-This specific section is a source for the [plugin.xml](/src/main/resources/META-INF/plugin.xml) file which will be extracted by the [Gradle](/build.gradle.kts) during the build process.
+<h3>Features</h3>
+<ul>
+    <li><b>Intelligent Chat</b>: Chat with LISA to ask questions, explain code, and get suggestions.</li>
+    <li><b>Context Awareness</b>: LISA understands your active file and selected text.</li>
+    <li><b>Agentic Capabilities</b>: Run advanced commands and workflows directly from your IDE.</li>
+    <li><b>Universal LLM Support</b>: Connect to any OpenAI-compatible provider (OpenAI, Anthropic, Ollama, etc.).</li>
+</ul>
 
-To keep everything working, do not remove `<!-- ... -->` sections. 
+<p>LISA brings the power of Agentic AI directly into IntelliJ, streamlining your development workflow.</p>
 <!-- Plugin description end -->
 
 ## Installation

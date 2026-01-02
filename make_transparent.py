@@ -43,12 +43,15 @@ if os.path.exists(source):
     # If source is already transparent (like our generated ones), we might just load it.
     # Ideally, we remove background first, then resize that result.
     
-    # Process main source to transparent VS Code icon (high res default)
-    success = remove_background(source, vscode_icon)
+    # Revert: Skip background removal as quality was poor. Use original source.
+    # success = remove_background(source, vscode_icon)
     
-    if success:
-        # Load the transparent image we just saved
-        base_img = Image.open(vscode_icon)
+    # Just resize source to vscode destination standard size
+    base_img = Image.open(source)
+    resize_and_save(base_img, 512, 512, vscode_icon)
+    
+    # Continue with IntelliJ icons
+    if True: # success check bypassed
         
         # IntelliJ Variants
         # 1x (40x40)
@@ -58,10 +61,16 @@ if os.path.exists(source):
         # 2x (80x80)
         resize_and_save(base_img, 80, 80, os.path.join(intellij_base, "pluginIcon@2x.png"))
         resize_and_save(base_img, 80, 80, os.path.join(intellij_base, "pluginIcon_dark@2x.png"))
+
+        # Explicit LISA Icon for Tool Window
+        icons_dir = "intellij/src/main/resources/icons"
+        if not os.path.exists(icons_dir):
+            os.makedirs(icons_dir)
+        resize_and_save(base_img, 40, 40, os.path.join(icons_dir, "lisa.png"))
         
         # 3x (120x120) - Extra high res just in case
         resize_and_save(base_img, 120, 120, os.path.join(intellij_base, "pluginIcon@3x.png"))
         
-        print("Generated all icon variants.")
+        print("Generated all icon variants (Reverted to solid background).")
 else:
     print(f"Could not find source: {source}")

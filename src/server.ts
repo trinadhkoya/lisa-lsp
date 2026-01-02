@@ -223,6 +223,12 @@ connection.onRequest('lisa/updateConfig', (config: Partial<McpConfig>) => {
     return { success: true };
 });
 
+connection.onRequest('lisa/configure', (config: Partial<McpConfig>) => {
+    currentConfig = { ...currentConfig, ...config };
+    debugLog(`Config updated (via configure): ${currentConfig.provider} / ${currentConfig.model}`);
+    return { success: true };
+});
+
 connection.onExecuteCommand(async (params: ExecuteCommandParams) => {
     debugLog(`ExecuteCommand: ${params.command}`);
 

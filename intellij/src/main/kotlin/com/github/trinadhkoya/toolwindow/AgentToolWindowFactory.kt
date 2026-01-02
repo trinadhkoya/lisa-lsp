@@ -75,7 +75,6 @@ class AgentToolWindowFactory : ToolWindowFactory, DumbAware {
         }
 
         private fun loadContent() {
-            // Ported HTML from VS Code Extension
             val htmlContent = """
                 <!DOCTYPE html>
                 <html lang="en">
@@ -83,29 +82,23 @@ class AgentToolWindowFactory : ToolWindowFactory, DumbAware {
                   <meta charset="UTF-8">
                   <style>
                     :root {
-                        --bg-primary: #1e1e1e;
-                        --bg-secondary: #252526;
-                        --bg-tertiary: #2d2d30;
-                        --border-color: #3e3e42;
-                        --text-primary: #cccccc;
-                        --text-secondary: #858585;
-                        --text-muted: #6a6a6a;
-                        --accent-blue: #007acc;
-                        --accent-blue-hover: #1a8cdb;
-                        --accent-green: #4ec9b0;
-                        --accent-purple: #c586c0;
-                        --success: #73c991;
-                        --error: #f48771;
-                        --font-main: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-                        --font-mono: "SF Mono", Monaco, "Cascadia Code", "Roboto Mono", Consolas, "Courier New", monospace;
+                        --bg-app: #09090b;
+                        --bg-panel: #18181b;
+                        --bg-input: #27272a;
+                        --border: #3f3f46;
+                        --text-primary: #e4e4e7;
+                        --text-secondary: #a1a1aa;
+                        --accent: #3b82f6;
+                        --accent-hover: #2563eb;
+                        --font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
                     }
 
                     * { box-sizing: border-box; }
                     
                     body {
-                        background: var(--bg-primary);
+                        background: var(--bg-app);
                         color: var(--text-primary);
-                        font-family: var(--font-main);
+                        font-family: var(--font-family);
                         margin: 0;
                         padding: 0;
                         height: 100vh;
@@ -113,343 +106,251 @@ class AgentToolWindowFactory : ToolWindowFactory, DumbAware {
                         flex-direction: column;
                         overflow: hidden;
                         font-size: 13px;
-                        line-height: 1.6;
                     }
 
-                    /* Header - Clean & Minimal */
+                    /* Header (Diff/Context View Style) */
                     header {
-                        padding: 14px 20px;
-                        border-bottom: 1px solid var(--border-color);
-                        background: var(--bg-secondary);
+                        background: var(--bg-app);
+                        padding: 12px 16px;
                         display: flex;
                         justify-content: space-between;
                         align-items: center;
+                        border-bottom: 1px solid var(--border);
                         flex-shrink: 0;
                     }
-                    header h2 {
-                        margin: 0;
+                    .header-title {
+                        font-weight: 500;
                         font-size: 13px;
-                        font-weight: 600;
-                        color: var(--text-primary);
-                        letter-spacing: -0.01em;
+                        display: flex;
+                        align-items: center;
+                        gap: 8px;
                     }
+                    .header-actions {
+                        display: flex;
+                        gap: 8px;
+                    }
+                    .header-btn {
+                        background: transparent;
+                        border: none;
+                        color: var(--text-secondary);
+                        font-size: 12px;
+                        cursor: pointer;
+                        padding: 4px 8px;
+                        border-radius: 4px;
+                    }
+                    .header-btn:hover { background: var(--bg-panel); color: var(--text-primary); }
+                    .header-btn.primary { background: var(--accent); color: white; }
+                    .header-btn.primary:hover { background: var(--accent-hover); }
+
+                    /* Chat Area */
+                    #chat-history {
+                        flex: 1;
+                        overflow-y: auto;
+                        padding: 16px;
+                        display: flex;
+                        flex-direction: column;
+                        gap: 20px;
+                    }
+
+                    /* Messages */
+                    .user-message {
+                        align-self: flex-end;
+                        background: var(--bg-input);
+                        padding: 10px 14px;
+                        border-radius: 12px;
+                        max-width: 85%;
+                        font-size: 13px;
+                        line-height: 1.5;
+                        color: var(--text-primary);
+                    }
+                    .agent-message {
+                        align-self: flex-start;
+                        max-width: 90%;
+                        font-size: 13px;
+                        line-height: 1.6;
+                        color: var(--text-secondary);
+                    }
+                    .agent-message strong { color: var(--text-primary); font-weight: 600; }
+                    
+                    /* Input Area Container */
+                    .input-container {
+                        padding: 16px;
+                        background: var(--bg-app);
+                        position: relative;
+                        z-index: 10;
+                    }
+                    
+                    /* The Main Input Box */
+                    .input-box {
+                        background: var(--bg-panel);
+                        border: 1px solid var(--border);
+                        border-radius: 12px;
+                        padding: 12px;
+                        display: flex;
+                        flex-direction: column;
+                        gap: 8px;
+                        transition: border-color 0.2s;
+                    }
+                    .input-box:focus-within {
+                        border-color: #52525b;
+                    }
+
+                    textarea {
+                        background: transparent;
+                        border: none;
+                        color: var(--text-primary);
+                        font-family: var(--font-family);
+                        font-size: 13px;
+                        resize: none;
+                        outline: none;
+                        min-height: 24px;
+                        width: 100%;
+                        line-height: 1.5;
+                    }
+                    textarea::placeholder { color: #52525b; }
+
+                    /* Input Footer Controls */
+                    .input-controls {
+                        display: flex;
+                        justify-content: space-between;
+                        align-items: center;
+                        padding-top: 4px;
+                    }
+                    
+                    .left-controls {
+                        display: flex;
+                        align-items: center;
+                        gap: 6px;
+                    }
+                    
+                    .right-controls {
+                        display: flex;
+                        align-items: center;
+                        gap: 8px;
+                    }
+
+                    /* Buttons & Pills */
                     .icon-btn {
                         background: transparent;
                         border: none;
                         color: var(--text-secondary);
                         cursor: pointer;
-                        padding: 6px 8px;
+                        padding: 4px;
                         border-radius: 4px;
-                        transition: all 0.15s ease;
-                        font-size: 14px;
-                    }
-                    .icon-btn:hover {
-                        background: var(--bg-tertiary);
-                        color: var(--text-primary);
-                    }
-
-                    /* Chat History - Spacious & Clean */
-                    #chat-history {
-                        flex: 1;
-                        overflow-y: auto;
-                        padding: 24px 20px;
-                        display: flex;
-                        flex-direction: column;
-                        gap: 24px;
-                    }
-                    #chat-history::-webkit-scrollbar { width: 8px; }
-                    #chat-history::-webkit-scrollbar-track { background: transparent; }
-                    #chat-history::-webkit-scrollbar-thumb { 
-                        background: var(--border-color); 
-                        border-radius: 4px;
-                    }
-                    #chat-history::-webkit-scrollbar-thumb:hover { background: #4a4a4f; }
-
-                    /* Welcome Card */
-                    .welcome-card {
-                        background: linear-gradient(135deg, var(--bg-secondary) 0%, var(--bg-tertiary) 100%);
-                        border: 1px solid var(--border-color);
-                        border-radius: 8px;
-                        padding: 20px;
-                        margin-bottom: 8px;
-                    }
-                    .welcome-title {
-                        font-size: 15px;
-                        font-weight: 600;
-                        margin-bottom: 8px;
-                        color: var(--text-primary);
-                    }
-                    .welcome-subtitle {
-                        font-size: 12px;
-                        color: var(--text-secondary);
-                        line-height: 1.5;
-                    }
-
-                    /* Message Blocks */
-                    .message-block {
-                        animation: slideIn 0.2s ease;
-                    }
-                    @keyframes slideIn {
-                        from { opacity: 0; transform: translateY(8px); }
-                        to { opacity: 1; transform: translateY(0); }
-                    }
-
-                    /* User Message */
-                    .user-message {
-                        display: flex;
-                        flex-direction: column;
-                        gap: 6px;
-                    }
-                    .message-label {
-                        font-size: 11px;
-                        font-weight: 600;
-                        text-transform: uppercase;
-                        letter-spacing: 0.5px;
-                        color: var(--text-muted);
-                    }
-                    .user-content {
-                        background: var(--bg-secondary);
-                        border: 1px solid var(--border-color);
-                        border-radius: 6px;
-                        padding: 12px 14px;
-                        font-size: 13px;
-                        line-height: 1.5;
-                        color: var(--text-primary);
-                    }
-
-                    /* Agent Response */
-                    .agent-message {
-                        display: flex;
-                        flex-direction: column;
-                        gap: 6px;
-                    }
-                    .agent-content {
-                        background: var(--bg-tertiary);
-                        border-left: 3px solid var(--accent-green);
-                        border-radius: 6px;
-                        padding: 14px 16px;
-                        font-size: 13px;
-                        line-height: 1.6;
-                        color: var(--text-primary);
-                        white-space: pre-wrap;
-                        word-wrap: break-word;
-                    }
-
-                    /* Status Messages */
-                    .status-message {
                         display: flex;
                         align-items: center;
-                        gap: 10px;
-                        padding: 10px 14px;
-                        background: var(--bg-secondary);
-                        border: 1px solid var(--border-color);
-                        border-radius: 6px;
-                        font-size: 12px;
-                        color: var(--text-secondary);
+                        justify-content: center;
+                        transition: color 0.15s;
                     }
-                    .status-message.success { border-left: 3px solid var(--success); }
-                    .status-message.error { border-left: 3px solid var(--error); }
-
-                    /* Input Container - Modern & Clean */
-                    .input-container {
-                        padding: 16px 20px 20px;
-                        border-top: 1px solid var(--border-color);
-                        background: var(--bg-secondary);
-                        flex-shrink: 0;
-                    }
-                    .input-wrapper {
-                        background: var(--bg-tertiary);
-                        border: 1px solid var(--border-color);
-                        border-radius: 8px;
-                        transition: border-color 0.2s ease;
-                    }
-                    .input-wrapper:focus-within {
-                        border-color: var(--accent-blue);
-                    }
-                    textarea {
-                        width: 100%;
-                        border: none;
-                        background: transparent;
-                        color: var(--text-primary);
-                        padding: 12px 14px;
-                        font-family: var(--font-main);
-                        font-size: 13px;
-                        resize: none;
-                        outline: none;
-                        min-height: 44px;
-                        max-height: 120px;
-                    }
-                    textarea::placeholder {
-                        color: var(--text-muted);
-                    }
-
-                    /* Input Actions */
-                    .input-actions {
-                        display: flex;
-                        justify-content: space-between;
-                        align-items: center;
-                        padding: 8px 10px;
-                        border-top: 1px solid var(--border-color);
-                    }
+                    .icon-btn:hover { color: var(--text-primary); background: var(--bg-input); }
                     
-                    /* Agent Pills */
-                    .agent-pills {
-                        display: flex;
-                        gap: 6px;
-                        flex-wrap: wrap;
-                    }
-                    .pill {
+                    .pill-btn {
+                        background: transparent;
+                        border: none;
+                        color: var(--text-secondary);
                         font-size: 11px;
                         font-weight: 500;
-                        padding: 4px 10px;
+                        padding: 4px 8px;
                         border-radius: 4px;
-                        background: var(--bg-primary);
-                        color: var(--text-secondary);
                         cursor: pointer;
-                        border: 1px solid transparent;
-                        transition: all 0.15s ease;
+                        display: flex;
+                        align-items: center;
+                        gap: 4px;
+                        transition: all 0.15s;
                     }
-                    .pill:hover {
-                        background: var(--bg-secondary);
-                        color: var(--text-primary);
-                    }
-                    .pill.active {
-                        background: var(--accent-blue);
-                        color: white;
-                        border-color: var(--accent-blue);
-                    }
+                    .pill-btn:hover { background: var(--bg-input); color: var(--text-primary); }
+                    .pill-btn span { font-size: 9px; opacity: 0.7; }
 
-                    /* Send Button */
                     .send-btn {
-                        background: var(--accent-blue);
-                        color: white;
+                        background: var(--bg-input);
+                        color: var(--text-primary);
                         border: none;
-                        border-radius: 6px;
-                        width: 34px;
-                        height: 34px;
+                        border-radius: 8px;
+                        width: 28px;
+                        height: 28px;
                         display: flex;
                         align-items: center;
                         justify-content: center;
                         cursor: pointer;
-                        transition: all 0.15s ease;
-                        flex-shrink: 0;
+                        transition: all 0.15s;
                     }
-                    .send-btn:hover {
-                        background: var(--accent-blue-hover);
-                        transform: scale(1.05);
-                    }
-                    .send-btn:active {
-                        transform: scale(0.98);
-                    }
-                    .send-btn svg {
-                        width: 16px;
-                        height: 16px;
-                        fill: white;
-                    }
+                    .send-btn:hover { background: var(--text-secondary); color: var(--bg-app); }
+                    .send-btn svg { width: 14px; height: 14px; fill: currentColor; }
 
-                    /* Settings Panel */
+                    /* Config Overlay */
                     .settings-overlay {
                         position: absolute;
-                        top: 56px;
-                        right: 20px;
-                        width: 300px;
-                        background: var(--bg-secondary);
-                        border: 1px solid var(--border-color);
+                        bottom: 80px;
+                        left: 16px;
+                        width: 280px;
+                        background: var(--bg-panel);
+                        border: 1px solid var(--border);
                         border-radius: 8px;
-                        box-shadow: 0 8px 24px rgba(0,0,0,0.4);
-                        padding: 20px;
-                        z-index: 100;
+                        padding: 12px;
                         display: none;
+                        box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.5);
                     }
-                    .settings-overlay.open { display: block; animation: slideIn 0.2s ease; }
-                    .settings-header {
-                        display: flex;
-                        justify-content: space-between;
-                        align-items: center;
-                        margin-bottom: 16px;
-                    }
-                    .settings-title {
-                        font-size: 14px;
-                        font-weight: 600;
-                        color: var(--text-primary);
-                    }
-                    .close-btn {
-                        background: transparent;
-                        border: none;
-                        color: var(--text-secondary);
-                        cursor: pointer;
-                        padding: 4px;
-                        font-size: 16px;
-                        line-height: 1;
-                    }
-                    .close-btn:hover { color: var(--text-primary); }
+                    .settings-overlay.open { display: block; }
                     
-                    .form-group {
-                        margin-bottom: 14px;
-                    }
+                    .form-group { margin-bottom: 12px; }
                     .form-group label {
                         display: block;
                         font-size: 11px;
-                        font-weight: 600;
-                        text-transform: uppercase;
-                        letter-spacing: 0.5px;
-                        margin-bottom: 6px;
-                        color: var(--text-muted);
+                        color: var(--text-secondary);
+                        margin-bottom: 4px;
                     }
-                    .form-group select,
-                    .form-group input {
+                    .form-group select, .form-group input {
                         width: 100%;
-                        padding: 8px 10px;
-                        border-radius: 4px;
-                        border: 1px solid var(--border-color);
-                        background: var(--bg-tertiary);
+                        background: var(--bg-app);
+                        border: 1px solid var(--border);
                         color: var(--text-primary);
+                        padding: 6px;
+                        border-radius: 4px;
                         font-size: 12px;
-                        font-family: var(--font-main);
-                        outline: none;
-                        transition: border-color 0.2s ease;
                     }
-                    .form-group select:focus,
-                    .form-group input:focus {
-                        border-color: var(--accent-blue);
-                    }
-                    
                     .save-btn {
                         width: 100%;
-                        padding: 9px;
-                        background: var(--accent-blue);
+                        background: var(--accent);
                         color: white;
                         border: none;
-                        border-radius: 6px;
-                        font-size: 12px;
-                        font-weight: 600;
+                        padding: 8px;
+                        border-radius: 4px;
                         cursor: pointer;
-                        transition: all 0.15s ease;
-                        margin-top: 6px;
+                        font-size: 12px;
                     }
-                    .save-btn:hover {
-                        background: var(--accent-blue-hover);
-                    }
+
                   </style>
                 </head>
                 <body>
                   
                   <header>
-                    <h2>LISA Agent</h2>
-                    <button class="icon-btn" id="toggle-settings" title="Configuration">⚙️</button>
+                    <div class="header-title">
+                       <img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACgAAAAoCAYAAACM/rhtAAAMVklEQVR4nL1YWWxd13Vde587voHzIIq0SFM2ZXmQ7XiIhDZlXCBGCwRNkYBJUaDN9NH2I1/96E8B2z9F89Og/aiRfhR1WjRFiADugCauf8zALpQ0lEdZpkRKYmSJ4yP1Ht907z3n7OLcR8qkBjtIa+/3Ns499z6cs96e7l4H+OSEADDwDHfGfP7/tvD/QWcUZmbUbVeeufFs7/e33fwTkvEIvQNDUBxBpSnWrq8Cy+2Dv3HWfc5+FEA6efJk1GyWOUka3N3dRUkSMnqAstEEdO99YXr6zZFinx4ZmTiwqJNarZiv/f0ffe/JRpZ9WQifA9EYiHwhaIhZZcIZj3j20499+j+PD3Vl3/nOn7ZuAbN/MjMzoxavbg8nlttxlnCWBayUeMyRhwgIbEA28Mn3FCeN61NJYv4IQvcpxUXyfCL2weyBfR/i+8R+KBlwmMKYSQUQT0GIIQBEBGIMkLbANrlGYo0n9l9O/8ff/Rk9+yzhuY4lvf0A19cRR0L69dP/tfVRDpuaOtVPyhMmdVT80CdhsFIQJTBKwMI5GA4CIAgtgojI8yHsQUCwVkRMKsTMOuXDNm0CYr8+e/bsn+O559Jd48kBgFmWkLVmf5C7P3uL1aenp3ljw5IFM7HSACmRTmIKE4gdUAXyPMCPCEHMEsSwfgjr+bCkIGKJdAooD6TIsFiyFuZv/uKfigAcwFzcqrcT+TCdm5uzWSabYp2rEBhLJABbATvQlhQLKbYcsCifxHPAIpgghg6LMFERJi7DxF2wcRkSlhQFEYSD4bfPnPlqjmB6Wn0YwI8SUYpaxsoVY2CMCIwVGAGMSx43J85Vg6HdqBQy5UN7Pozvw/oBdBBBhwU468KpF8JYfAOAwtyc+VUB5m6v17PrInTeWKuNsTDGihaB3gWqBcisQLvQyZVyoNYlyZ4qBat8iOcDynfh4qLlfvQ9OtXZ5xm+DUAXAh8tR4+GmdU4Z42sWSPkQOoO0Bzkjevd0VgDu6eyGy0ukwFYuMxmgFx0BEqFsQMI4JWDAJOkyUrR7av+QaE5t7DForHysjZ6S7sIN0a0NcjMnmqYXDNYnUGyBFanu5pBjAasycuNtdZlt+S5yeLvbcT762Ech2xMEnxwb0Zhetq7qV66a4u5Ob28PHcZRD8wRi5r49xrobX5wGJaw2RZrpKmQJYAaQJJks48zZxVIO65dmAdRILoD4x0oMwo5UmbvDw4cxCYBZypDoKTEYwUZPzobwg4SY3thvAWxFqywuRS2RiQNoAyrnaBVAoiBSaCcu70nYOd5TRYp5CknQNWYsllCRmpd7YbOlgHnUinDjrxi12Pf0l5NFjbuvrPwLWKezw4eP8h6p98ySsOnjCNOrJGpQayKRkoZoYX+Qg8hoiGNs4yDE45r40KIcooIJIymtRAPavDJi1Q0s4tS0SELKsbk77dgTB7K0BPq9ztQ/f9zvN9D5/6JnOE2vk3vv7+/AunxsZOchb3/rDvwVMnHpv5vL62uqmuvPJqV+WtMygOj+LQgycwVhAc625CTB3zC+tY2tJIEoIvJRztnsT0vY/g0cMD+Ncz7+CntddRb7dhkrpzs7AKiIy+iO35a3uhdFOSBKzKcQr0l/1iz+8N/9pTpvvxp7Kwb/RRH0NT75+6K7VGX5JWy8aj/SjefYy6xielOHREJr70FfT392M8aONIoYUvf3Ycz/7xZzBaAqSdQGWE+PARVJiwvdVGgQHdqsM2a9CNHXBiRGUkIdHzADRmZnJsBwDWXBwmSoAkJFbCSUNt/OxNZZLMKq/UhdlZY1rNF2qXL/Li28u8emYR7c2Uek+coOZOhtpaE6d/vowfvXYZyysNXLm6jUatASQp4oF+qKEIC++s4pU3llAKCEVlYFoNeJmxJSq7l/LGn3zti9/reHf21mYhzlrMw4XWyNAjv+21UPD9kimTj5ZESvX1TGAd/y02WdFpK2tdqfrFoWHhgV6qViuw1xvgQ8NIrk/i3MVz+PZ359HOmqhlFsgKmJj+FKwRuCaMUYGvPdzTW0B1zaA7HAclTTTN9WRiYupA63ZToS5jrNRltVIPlONe9s7vyNjYcZTCHoR+6Q9ckrQhxSCKVev8qkTVOg2WfDQvXUYcRmgvX0FhdAzjDz+Fe8d/CwPxQ2hXgXLvIMSG2H53FeuNBTSbl9FVvoBfPx7hyWOPYbR/GBtbS8hcsN6cE/snJta0XKmHGv5yefAw/M0mFShVD901hovvRU8P3PubL6btVrfvxcTVFNGFDcQFjeqFeSiboW/wbtB7m3BNxFYY4OnHfhdZ06DW34PNN99HfGwU4HWUkxTHxhUeeOI4aukqvv/Dl5C0dqAoxocCbLe0p0y7O00rrcZOBQNDIQaTAEoMPL+fMqW/EEYutyKMSQnxRgsNrmKkz8dUaRtvv3kemQnx+MRTKJtBXLi4hiODd2NxrB+lIALVEwx1BZhg4OFHJxAEGdB4B8nOmmuDxGgtly9/CMDhsa7W0oWVb3uF4r0baxcx0HMPp72HEd03iQdKX8FdgW8mVRddubLOekuwVv0FegqMP/zCg3j6Mw/h7//hAhaW2oi8CEyCIBNUohjFIEbt5xfQljoyvY3h48BP5hbQrlfA1mCgK6ZmYweu1NdqG3RHgBOPfLZ9YfEHn+MwOiSU2Y3aJlcqGzgBhaliL6prWyqY6MGhngyr1RpOHnsCK5vvYbNSx7m3ltEVaUwdmsBOUkYtbYCyBJV7upBsNZAMxKi+fhrb7Q0sXkrxzru9GD8cyH3H+u2DU/105WplRbH3k/VzZ917+AY3uaVQsx9lLJ4YCzRaqygNTOLc2iVM9YzA04TrmytYunoFLApeOIDzlfexdHYZ8yMt9BWGECNFuQA0Gpt4bfkMyt2fAko9SK6dh1xfh0XLeh7stdWqF3ndNDqilU41PNZ/29vd9ePVysUbjcJtAZIfEMhRjFDqdgeNzffgeTFWakuI2ANdde/0DFnWwmvLr0F0E44sLaxUEFAVES8jayfQyQ489rH9ystgKIhNQJLBc863xu6Y9va7i21eWl5L2jp7ceGa/1fTY/Eh1yLdEWBX37DA8wWsYPw4b9GtFwDkgQVoZhmUa4uyLG+TODAgUE6Q2DjQbaTa/QYIyAelBiQGTJx3KiLkej6CwDc2a2qx/55qeXFp49WX8ipiRtlErknZ59H9k3OvzkXiBaH4IRAWyEZFINcCTBjDzXXOL/IO2MUDyJEe9jrX5EFRCIYPMQS2u+quxfXxDGVJ2DJYqARNiWKcd3TXOS/LjEX1ppDrDM/kmbN86UK/MJfh6GEQwhEZBCHED5zrAd/vqLOq54E8BWIGOQZHjE4z5T4qt6q75z7Oyq7Pc9ppAkRI2L1TK9wMarOzs3mLzZzdwiIPuFiT74EVOe7q6KAj2g6s6+U6hie4fg1sOoDIuWx343zzjuZgcvbrpOOxvBF115T3+SRkRZFcbdV0Y4/ntNtA0avezoLP5j8I/GKdgH3vm/y/d8A4vuvA5OMHPTa5/dyrA7YDKt/fzffud0Z3L1fHR8i6f/GGBZ1ZxtweSYfViW41CreLwc5uT0werzKkwVaDbSpkNcRqQDTg+IMY19F25rmaXTCdza0YODrfmRs4K7k2WxxNciNZ60ZD5l0heV6q8bldE+cGMrql636yB1BuSZKjRwcMdGqRtUFpG+zOTXav83s6yYvv3gidAK5rtk47YEVyVgybqyVxMN0HzmouZ8ymwHw3joN/W0TZsdIbUjNp2mis6zvGoHsNim5b0bBMzhSC/HiCPec9Vwdcay7kgiVtQ9wzk3XUanLqjjSMmKYAnoBSN1JeX+AK4Spg/9Go4IW31l5u7jtaycfBwVZ9cn7SzuL0neugpGkR2rJA2NU6eGnOJ9wS7vBE0pQcf3BkCFrnbExM2nlmkyaLLChgEWJ/AaYNMTJCRJdEySaM/E/fTuvSPOYdl79F5ufns3nMH7hHNx8ejj/5xb9MNX6fFAn8AnNe71jBit9hQlrbNN1lbhlEG9hUwzEksvY6i5xVlhYVyQoZNBRoRxRVmOwG+7qmpJTUqC5pWk6nVnbSOcwdcOkvdcL6rW/9dVjr67rx7NrSplrdvhj0FYayifsndB4LN4KiIwvNGmUXGwRs+2E9sY02qdAvWWPTfB1tUtpRDeltRdlmsGMHBupmfv7z5uYT1V9GftUDpY9F7nRG/XGeXcvHuPYnL/8LhDDiPwMGNRYAAAAASUVORK5CYII=" style="width:16px;height:16px;vertical-align:middle;margin-right:4px;">
+                       <span>LISA Agent</span>
+                    </div>
+                    <div class="header-actions">
+                        <!-- Mimicking the 'Reject/Accept' style locally for effect, functional for 'Clear' -->
+                        <button class="header-btn" onclick="document.getElementById('chat-history').innerHTML = ''">Clear</button>
+                    </div>
                   </header>
 
-                  <div id="settings-panel" class="settings-overlay">
-                        <div class="settings-header">
-                            <div class="settings-title">Configuration</div>
-                            <button class="close-btn" id="close-settings">✕</button>
+                  <div id="chat-history">
+                        <div class="agent-message">
+                            <strong>LISA</strong><br>
+                            Hi! I'm ready to help. Ask me anything or press <strong>CMD+L</strong> to start.
                         </div>
+                  </div>
+
+                  <div class="input-container">
+                    
+                    <!-- Settings Panel -->
+                    <div id="settings-panel" class="settings-overlay">
                         <div class="form-group">
                             <label>Provider</label>
                             <select id="provider-select">
                                 <option value="openai">OpenAI</option>
-                                <option value="anthropics">Anthropic (Claude)</option>
-                                <option value="gemini">Google Gemini</option>
+                                <option value="anthropics">Anthropic</option>
+                                <option value="gemini">Gemini</option>
                                 <option value="groq">Groq</option>
                             </select>
                         </div>
@@ -459,69 +360,55 @@ class AgentToolWindowFactory : ToolWindowFactory, DumbAware {
                         </div>
                         <div class="form-group">
                             <label>API Key</label>
-                            <input type="password" id="api-key" placeholder="Enter your API key" />
+                            <input type="password" id="api-key" placeholder="API Key" />
                         </div>
-                        <button class="save-btn" id="save-config-btn">Save Configuration</button>
-                  </div>
+                        <button class="save-btn" id="save-config-btn">Save</button>
+                    </div>
 
-                  <!-- Chat Feed -->
-                  <div id="chat-history">
-                      <div class="welcome-card">
-                          <div class="welcome-title">Welcome to LISA</div>
-                          <div class="welcome-subtitle">I'm ready to help you code. Select an agent capability below and start chatting.</div>
-                      </div>
-                  </div>
-
-                  <!-- Input Area -->
-                  <div class="input-container">
-                    <div class="input-wrapper">
-                        <textarea id="instruction" rows="2" placeholder="Ask me anything or describe a task..."></textarea>
-                        <div class="input-actions">
-                            <div class="agent-pills">
-                                <div class="pill active" data-value="chat">Chat</div>
-                                <div class="pill" data-value="generateTests">Test Gen</div>
-                                <div class="pill" data-value="addJsDoc">Docs</div>
-                                <div class="pill" data-value="refactor">Refactor</div>
+                    <div class="input-box">
+                        <textarea id="instruction" placeholder="Ask anything (⌘L), @ to mention, / for workflows"></textarea>
+                        
+                        <div class="input-controls">
+                            <div class="left-controls">
+                                <button class="icon-btn" title="Add Context">+</button>
+                                <button class="pill-btn" id="mode-btn">
+                                    Fast <span>⌄</span>
+                                </button>
+                                <button class="pill-btn" id="model-btn">
+                                    Gemini 3 Pro <span>⌄</span>
+                                </button>
                             </div>
-                            <button class="send-btn" id="run-btn" title="Send Message">
-                                <svg viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg"><path d="M1.72365 1.57467C1.19662 1.34026 0.655953 1.8817 0.891391 2.40871L3.08055 7.30906C3.12067 7.39886 3.12066 7.50207 3.08054 7.59187L0.891392 12.4922C0.655953 13.0192 1.19662 13.5607 1.72366 13.3262L14.7762 7.5251C15.32 7.28315 15.32 6.51778 14.7762 6.27583L1.72365 1.57467Z"/></svg>
-                            </button>
+                            <div class="right-controls">
+                                <button class="icon-btn">🎤</button>
+                                <button class="send-btn" id="run-btn">
+                                    <svg viewBox="0 0 16 16"><path d="M1.72365 1.57467C1.19662 1.34026 0.655953 1.8817 0.891391 2.40871L3.08055 7.30906C3.12067 7.39886 3.12066 7.50207 3.08054 7.59187L0.891392 12.4922C0.655953 13.0192 1.19662 13.5607 1.72366 13.3262L14.7762 7.5251C15.32 7.28315 15.32 6.51778 14.7762 6.27583L1.72365 1.57467Z"/></svg>
+                                </button>
+                            </div>
                         </div>
                     </div>
                   </div>
-                  
-                  <div id="debug-log" style="font-size:10px; color:#666; padding:10px; border-top:1px solid #444; max-height:100px; overflow-y:auto; display:none;">
-                    <div>Debug Log (v1.0.9):</div>
-                  </div>
 
+                  <!-- Logic Scripts -->
+                  <div id="debug-log" style="display:none;"></div>
                   <script>
-                    const debugLog = document.getElementById('debug-log');
-                    function log(msg) {
-                        const d = document.createElement('div');
-                        d.textContent = "> " + msg;
-                        debugLog.appendChild(d);
-                        debugLog.scrollTop = debugLog.scrollHeight;
-                    }
-                    
-                    log("UI Loaded. Waiting for Bridge...");
-
+                    // Core Elements
                     const chatHistory = document.getElementById('chat-history');
                     const instructionInput = document.getElementById('instruction');
                     const runBtn = document.getElementById('run-btn');
-                    const pills = document.querySelectorAll('.pill');
                     
+                    // Config Elements
                     const settingsPanel = document.getElementById('settings-panel');
-                    const toggleSettings = document.getElementById('toggle-settings');
-                    const closeSettings = document.getElementById('close-settings');
-                    const saveConfig = document.getElementById('save-config-btn');
+                    const modelBtn = document.getElementById('model-btn');
+                    const saveConfigBtn = document.getElementById('save-config-btn');
                     const providerSelect = document.getElementById('provider-select');
                     const modelSelect = document.getElementById('model-select');
                     const apiKeyInput = document.getElementById('api-key');
 
+                    // State
                     let currentAgent = 'chat';
-                    let lastLoadingId = '';
-
-                    const models = {
+                    
+                    // Models Data
+                     const models = {
                         'openai': ['gpt-4-turbo', 'gpt-4o', 'gpt-3.5-turbo'],
                         'anthropics': ['claude-3-opus-20240229', 'claude-3-sonnet-20240229', 'claude-3-haiku-20240307'],
                         'gemini': ['gemini-1.5-pro', 'gemini-1.5-flash', 'gemini-pro'],
@@ -529,20 +416,28 @@ class AgentToolWindowFactory : ToolWindowFactory, DumbAware {
                     };
 
                     function updateModels() {
-                        const p = providerSelect ? providerSelect.value : 'openai';
-                        if (modelSelect && models[p]) {
-                            modelSelect.innerHTML = (models[p] || []).map(m => `<option value="${'$'}{m}">${'$'}{m}</option>`).join('');
+                        const p = providerSelect.value;
+                        if (models[p]) {
+                            modelSelect.innerHTML = models[p].map(m => `<option value="${'$'}{m}">${'$'}{m}</option>`).join('');
                         }
-                    }
-                    if (providerSelect) {
-                        providerSelect.addEventListener('change', updateModels);
-                        updateModels();
+                        // Update UI Pill
+                        const currentModel = modelSelect.value || 'Model';
+                        // Simplify name for UI
+                        let displayName = currentModel.split('-').map(s => s.charAt(0).toUpperCase() + s.slice(1)).join(' ');
+                        displayName = displayName.replace('Gpt', 'GPT').replace('Claude', 'Claude').replace('Gemini', 'Gemini');
+                        if (displayName.length > 15) displayName = displayName.substring(0, 12) + '...';
+                        
+                        document.querySelector('#model-btn').innerHTML = `${'$'}{displayName} <span>⌄</span>`;
                     }
 
-                    toggleSettings.onclick = () => settingsPanel.classList.toggle('open');
-                    closeSettings.onclick = () => settingsPanel.classList.remove('open');
-
-                    saveConfig.onclick = () => {
+                    providerSelect.addEventListener('change', updateModels);
+                    modelSelect.addEventListener('change', updateModels);
+                    
+                    // Toggle Settings
+                    modelBtn.onclick = () => settingsPanel.classList.toggle('open');
+                    
+                    // Save Config
+                    saveConfigBtn.onclick = () => {
                         window.lisa.postMessage(JSON.stringify({
                             command: 'saveConfig',
                             provider: providerSelect.value,
@@ -550,29 +445,41 @@ class AgentToolWindowFactory : ToolWindowFactory, DumbAware {
                             apiKey: apiKeyInput.value
                         }));
                         settingsPanel.classList.remove('open');
-                        const successDiv = document.createElement('div');
-                        successDiv.className = 'status-message success';
-                        successDiv.innerHTML = `<span>✅</span><span>Configuration saved successfully!</span>`;
-                        chatHistory.appendChild(successDiv);
-                        scrollToBottom();
+                        updateModels(); // Ensure label matches
                     };
 
-                    pills.forEach(p => {
-                        p.onclick = () => {
-                            pills.forEach(all => all.classList.remove('active'));
-                            p.classList.add('active');
-                            currentAgent = p.dataset.value;
-                            const map = {
-                                'chat': 'Ask me anything...',
-                                'generateTests': 'What should I test? (e.g. edge cases)',
-                                'addJsDoc': 'Which functions need docs?',
-                                'refactor': 'How should I refactor this?'
-                            };
-                            instructionInput.placeholder = map[currentAgent] || 'Enter instructions...';
-                        };
+                    // Auto-resize textarea
+                    instructionInput.addEventListener('input', function() {
+                        this.style.height = 'auto';
+                        this.style.height = (this.scrollHeight) + 'px';
                     });
 
-
+                    // Submit Logic
+                    function submit() {
+                        const text = instructionInput.value.trim();
+                        if (!text) return;
+                        
+                        // User Message UI
+                        const userDiv = document.createElement('div');
+                        userDiv.className = 'user-message';
+                        userDiv.textContent = text;
+                        chatHistory.appendChild(userDiv);
+                        
+                        instructionInput.value = '';
+                        instructionInput.style.height = 'auto';
+                        scrollToBottom();
+                        
+                        // Send to Backend
+                         try {
+                             window.lisa.postMessage(JSON.stringify({
+                                 command: 'runAgent',
+                                 agent: currentAgent,
+                                 instruction: text
+                             }));
+                        } catch (e) {
+                             console.error("Bridge Error", e);
+                        }
+                    }
 
                     runBtn.onclick = submit;
                     instructionInput.onkeydown = (e) => {
@@ -581,142 +488,47 @@ class AgentToolWindowFactory : ToolWindowFactory, DumbAware {
                             submit();
                         }
                     };
-
-                    function submit() {
-                        const text = instructionInput.value.trim();
-                        if(!text) return;
-                        
-                        if (!window.lisa) {
-                            log("FATAL: window.lisa missing!");
-                            alert("FATAL ERROR: Internal Bridge (window.lisa) is missing.");
-                            return;
-                        }
-                        
-                        log("Sending request: " + text.substring(0, 10));
-
-                        const userDiv = document.createElement('div');
-                        userDiv.className = 'message-block user-message';
-                        userDiv.innerHTML = `
-                            <div class="message-label">YOU</div>
-                            <div class="user-content">${'$'}{text}</div>
-                        `;
-                        chatHistory.appendChild(userDiv);
-                        
-                        instructionInput.value = '';
-
-                        lastLoadingId = 'loading-' + Date.now();
-                        const loadingDiv = document.createElement('div');
-                        loadingDiv.id = lastLoadingId;
-                        loadingDiv.className = 'status-message';
-                        loadingDiv.innerHTML = `<span>⏳</span><span>Thinking...</span>`;
-                        chatHistory.appendChild(loadingDiv);
-                        scrollToBottom();
-
-                        try {
-                             window.lisa.postMessage(JSON.stringify({
-                                 command: 'runAgent',
-                                 agent: currentAgent,
-                                 instruction: text
-                             }));
-                             log("Bridge postMessage success");
-                        } catch (e) {
-                             log("Bridge postMessage FAILED: " + e.message);
-                        }
-                    }
-
-                    function addStep(title, detail, icon, id) {
-                        const step = createStepElement(title, detail, icon, id);
-                        chatHistory.appendChild(step);
-                        scrollToBottom();
-                    }
-
-                    function createStepElement(title, detail, iconType, id) {
-                        const div = document.createElement('div');
-                        div.className = 'step-item';
-                        if(id) div.id = id;
-                        
-                        let icon = '⚪';
-                        if(iconType === 'check') icon = '✅';
-                        if(iconType === 'error') icon = '❌';
-                        if(iconType === 'loading') icon = '⏳';
-                        if(iconType === 'info') icon = 'ℹ️';
-
-                        div.innerHTML = `
-                            <div class="step-icon">${'$'}{icon}</div>
-                            <div class="step-content">
-                                <div class="step-title">${'$'}{title}</div>
-                                ${'$'}{detail ? `<div class="step-detail">${'$'}{detail}</div>` : ''}
-                            </div>
-                        `;
-                        return div;
-                    }
-
+                    
                     function scrollToBottom() {
                         chatHistory.scrollTop = chatHistory.scrollHeight;
                     }
 
-                    // Listen for messages from the extension (Agent Response)
-                    window.addEventListener('message', event => {
+                    // Message Listener for Agent Responses
+                     window.addEventListener('message', event => {
                         const message = event.data; 
-                        log("Event Listener Triggered. Cmd: " + (message ? message.command : 'null'));
-
                         if (message && message.command === 'agentResponse') {
-                            log("Handling agentResponse. Success: " + (message.data ? message.data.success : 'unknown'));
-                            
-                            // Find and remove the loading step
-                            if (lastLoadingId) {
-                                const loadingStep = document.getElementById(lastLoadingId);
-                                if (loadingStep) loadingStep.remove();
-                                lastLoadingId = '';
-                            }
-
                             const result = message.data || {};
-                            const success = result.success;
-                            const data = result.data; 
-                            const error = result.error;
-
-                            if (success) {
+                            if (result.success) {
                                 const responseDiv = document.createElement('div');
-                                responseDiv.className = 'message-block agent-message';
-                                responseDiv.innerHTML = `
-                                    <div class="message-label">LISA</div>
-                                    <div class="agent-content">${'$'}{data}</div>
-                                `;
+                                responseDiv.className = 'agent-message';
+                                // Simple markdown-ish bolding for now
+                                let content = result.data;
+                                content = content.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+                                content = content.replace(/`(.*?)`/g, '<code style="background:#333;padding:2px 4px;border-radius:3px;">$1</code>');
+                                responseDiv.innerHTML = `<strong>LISA</strong><br>${'$'}{content}`;
                                 chatHistory.appendChild(responseDiv);
                             } else {
-                                log("Agent returned error: " + error);
-                                const errorDiv = document.createElement('div');
-                                errorDiv.className = 'status-message error';
-                                errorDiv.innerHTML = `<span>❌</span><span>${'$'}{error || 'Unknown error occurred.'}</span>`;
-                                chatHistory.appendChild(errorDiv);
-                                
-                                if (error && (error.includes('API Key') || error.includes('401'))) {
-                                    settingsPanel.classList.add('open');
-                                }
+                                const errDiv = document.createElement('div');
+                                errDiv.className = 'agent-message';
+                                errDiv.style.color = '#ef4444';
+                                errDiv.textContent = `Error: ${'$'}{result.error}`;
+                                chatHistory.appendChild(errDiv);
                             }
                             scrollToBottom();
                         }
-                        
-                        if (message && message.command === 'debug') {
-                             log("BACKEND: " + message.message);
-                        }
-                    });
-
-                    // Robust Message Receiver for JCEF
+                     });
+                     
+                     // Helper for JCEF compatibility
                     window.receiveMessage = function(jsonStr) {
-                         log("receiveMessage called. Len: " + jsonStr.length);
                          try {
                              const msg = JSON.parse(jsonStr);
-                             
-                             // Dispatch a synthetic message event so existing listeners work
                              const event = new MessageEvent('message', { data: msg });
                              window.dispatchEvent(event);
-                             log("Event dispatched for: " + msg.command);
-                             
-                         } catch (e) {
-                             log("receiveMessage Error: " + e.message);
-                         }
+                         } catch (e) {}
                     };
+
+                    // Init
+                    updateModels();
                   </script>
                 </body>
                 </html>
@@ -770,7 +582,7 @@ class AgentToolWindowFactory : ToolWindowFactory, DumbAware {
                                 debugLog("Kotlin: Sending config to LSP: $configParams")
                                 
                                 val response = server.sendRequest<Any> {
-                                    val future = (it as Endpoint).request("lisa/configure", configParams) as CompletableFuture<Any>
+                                    val future = (it as Endpoint).request("lisa/updateConfig", configParams) as CompletableFuture<Any>
                                     future.orTimeout(5, java.util.concurrent.TimeUnit.SECONDS)
                                 }
                                 
