@@ -120,14 +120,14 @@ class AgentToolWindowFactory : ToolWindowFactory, DumbAware {
                     }
                     .header-title {
                         font-weight: 600;
-                        font-size: 16px;
+                        font-size: 20px;
                         display: flex;
                         align-items: center;
-                        gap: 10px;
+                        gap: 12px;
                     }
                     .header-title img {
-                        width: 20px;
-                        height: 20px;
+                        width: 32px;
+                        height: 32px;
                         object-fit: contain;
                     }
                     .header-actions {
