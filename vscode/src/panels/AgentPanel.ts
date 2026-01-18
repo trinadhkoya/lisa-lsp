@@ -221,10 +221,10 @@ export class AgentPanel {
                LISA Agent
             </div>
             <div>
-                <button class="icon-btn" title="Clear Chat" onclick="window.location.reload()">
+                <button class="icon-btn" title="Clear Chat" id="clear-chat-btn">
                     <span class="codicon codicon-clear-all"></span>
                 </button>
-                <button class="icon-btn" title="Settings" onclick="document.getElementById('settings-panel').classList.add('open')">
+                <button class="icon-btn" title="Settings" id="settings-btn">
                     <span class="codicon codicon-settings-gear"></span>
                 </button>
             </div>
@@ -243,7 +243,7 @@ export class AgentPanel {
                         Meet your AI crew. Get seamless assistance from agents like Claude, Gemini, and Local Models.
                      </div>
                      
-                     <button class="setup-btn" onclick="document.getElementById('settings-panel').classList.add('open')">
+                     <button class="setup-btn" id="hero-setup-btn">
                         <span class="codicon codicon-key"></span> 
                         Bring Your Own API Key
                      </button>
@@ -272,7 +272,7 @@ export class AgentPanel {
                         <input type="password" id="api-key" placeholder="Enter API Key" />
                     </div>
                     <div style="display:flex; gap:10px;">
-                        <button class="save-btn" onclick="document.getElementById('settings-panel').classList.remove('open')" style="background:transparent; border:1px solid var(--border);">Cancel</button>
+                        <button class="save-btn" id="cancel-config-btn" style="background:transparent; border:1px solid var(--border);">Cancel</button>
                         <button class="save-btn" id="save-config-btn">Save Configuration</button>
                     </div>
                 </div>
@@ -338,6 +338,32 @@ export class AgentPanel {
                 if (modelSelect) modelSelect.addEventListener('change', updateModels);
                 
                 if (modelBtn) modelBtn.onclick = () => settingsPanel.classList.toggle('open');
+
+                // Button Event Listeners (CSP Fix)
+                document.getElementById('clear-chat-btn')?.addEventListener('click', () => {
+                     vscode.postMessage({ command: 'reload' }); // Optional: handle reload via extension or just specific logic
+                     // Since window.location.reload() might be blocked or lose state, better to clear chat DOM
+                     chatHistory.innerHTML = '';
+                     // Or if full reload is really desired and allowed:
+                     // window.location.reload(); 
+                     // Let's stick to clearing DOM for a smoother experience, or re-render welcome.
+                     // Actually original code was window.location.reload(), let's try to mimic that or just empty chat.
+                     chatHistory.innerHTML = ''; 
+                     // Re-add welcome screen if empty? 
+                     // For now, simple clear is safer.
+                });
+
+                document.getElementById('settings-btn')?.addEventListener('click', () => {
+                    settingsPanel.classList.add('open');
+                });
+
+                document.getElementById('hero-setup-btn')?.addEventListener('click', () => {
+                    settingsPanel.classList.add('open');
+                });
+                
+                document.getElementById('cancel-config-btn')?.addEventListener('click', () => {
+                    settingsPanel.classList.remove('open');
+                });
                 
                 if (saveConfigBtn) saveConfigBtn.onclick = () => {
                     try {
