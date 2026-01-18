@@ -108,7 +108,7 @@ class AgentToolWindowFactory : ToolWindowFactory, DumbAware {
         }
 
         private fun setupBrowser() {
-            val query = JBCefJSQuery.create(browser as JBCefBrowser)
+            val query = JBCefJSQuery.create(browser as com.intellij.ui.jcef.JBCefBrowserBase)
             Disposer.register(browser, query)
             jsQuery = query
             
