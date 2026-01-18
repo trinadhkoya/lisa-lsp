@@ -1,12 +1,13 @@
 {
   "name": "lisa-lsp",
-  "version": "1.1.30",
+  "version": "1.1.32",
   "main": "dist/server.js",
   "scripts": {
     "build": "tsc",
     "watch": "tsc -w",
     "start": "node dist/server.js",
     "dev": "ts-node src/server.ts",
+    "prebuild": "./update-version.sh",
     "build:vscode": "cd vscode && npm install && npm run compile && vsce package",
     "build:intellij": "cd intellij && ./gradlew buildPlugin",
     "build:all": "npm run build && npm run build:vscode && npm run build:intellij",
