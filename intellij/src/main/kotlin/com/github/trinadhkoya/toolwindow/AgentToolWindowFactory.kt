@@ -21,21 +21,86 @@ import com.intellij.platform.lsp.api.LspServerManager
 import com.intellij.openapi.fileEditor.FileEditorManager
 import kotlinx.coroutines.launch
 import org.eclipse.lsp4j.jsonrpc.Endpoint
+import org.eclipse.lsp4j.services.LanguageServer
 import java.util.concurrent.CompletableFuture
 import com.intellij.openapi.application.ApplicationManager
 
 class AgentToolWindowFactory : ToolWindowFactory, DumbAware {
 
+    companion object {
+        private val panels = mutableMapOf<Project, AgentPanel>()
+
+        fun getPanel(project: Project): AgentPanel? = panels[project]
+    }
+
     override fun createToolWindowContent(project: Project, toolWindow: ToolWindow) {
         val agentPanel = AgentPanel(project)
+        panels[project] = agentPanel
         val content = ContentFactory.getInstance().createContent(agentPanel.component, "", false)
         toolWindow.contentManager.addContent(content)
     }
 
-    private class AgentPanel(private val project: Project) {
+    class AgentPanel(private val project: Project) {
         val component = JPanel(BorderLayout())
         private val browser = JBCefBrowser()
         private var jsQuery: JBCefJSQuery? = null
+
+        fun sendAction(action: String, context: Map<String, String>) {
+            val file = context["file"] ?: ""
+            val selection = context["selection"] ?: ""
+            val language = context["language"] ?: ""
+            
+            val safeFile = file.replace("\"", "\\\"")
+            val safeSelection = selection.replace("\"", "\\\"").replace("\n", "\\n")
+            
+            val code = """
+                window.postMessage({
+                    command: 'setAction',
+                    action: '$action',
+                    context: {
+                        file: "$safeFile",
+                        selection: "$safeSelection",
+                        language: "$language"
+                    }
+                }, '*');
+            """
+            browser.cefBrowser.executeJavaScript(code, browser.cefBrowser.url, 0)
+        }
+
+        fun sendProjectContext(count: Int, fileList: String) {
+            val safeFileList = fileList.replace("\"", "\\\"").replace("\n", "\\n")
+            val code = """
+                window.postMessage({
+                    command: 'projectContext',
+                    count: $count,
+                    files: "$safeFileList"
+                }, '*');
+            """
+            browser.cefBrowser.executeJavaScript(code, browser.cefBrowser.url, 0)
+        }
+
+        private fun readProject() {
+            ApplicationManager.getApplication().invokeLater {
+                val result = com.intellij.openapi.ui.Messages.showYesNoDialog(project, 
+                    "Allow LISA to scan and index your project files? This will read file names and structure to provide better context.", 
+                    "Project Context Permission", 
+                    com.intellij.openapi.ui.Messages.getQuestionIcon())
+                    
+                if (result == com.intellij.openapi.ui.Messages.YES) {
+                    val files = mutableListOf<String>()
+                    val base = project.basePath ?: ""
+                    com.intellij.openapi.roots.ProjectFileIndex.getInstance(project).iterateContent { file ->
+                        if (!file.isDirectory && !file.name.startsWith(".")) {
+                            files.add(file.path.replace(base, "").trimStart('/'))
+                        }
+                        true
+                    }
+                    val limitedFiles = files.take(500)
+                    val fileList = limitedFiles.joinToString("\\n")
+                    sendProjectContext(files.size, fileList)
+                }
+            }
+        }
 
         init {
             component.add(browser.component, BorderLayout.CENTER)
@@ -43,7 +108,6 @@ class AgentToolWindowFactory : ToolWindowFactory, DumbAware {
         }
 
         private fun setupBrowser() {
-            // Register JS Query handler to receive messages from UI
             val query = JBCefJSQuery.create(browser as JBCefBrowser)
             Disposer.register(browser, query)
             jsQuery = query
@@ -53,7 +117,6 @@ class AgentToolWindowFactory : ToolWindowFactory, DumbAware {
                 null
             }
 
-            // Inject JS bridge when page loads
             browser.jbCefClient.addLoadHandler(object : CefLoadHandlerAdapter() {
                 override fun onLoadEnd(browser: CefBrowser?, frame: CefFrame?, httpStatusCode: Int) {
                     if (browser != null) {
@@ -65,7 +128,6 @@ class AgentToolWindowFactory : ToolWindowFactory, DumbAware {
                                 } 
                             };
                         """.trimIndent()
-                        // Use null URL to avoid security context issues with loadHTML
                         browser.executeJavaScript(script, null, 0)
                     }
                 }
@@ -82,15 +144,15 @@ class AgentToolWindowFactory : ToolWindowFactory, DumbAware {
                   <meta charset="UTF-8">
                   <style>
                     :root {
-                        --bg-app: #09090b;
-                        --bg-panel: #18181b;
-                        --bg-input: #27272a;
-                        --border: #3f3f46;
-                        --text-primary: #e4e4e7;
-                        --text-secondary: #a1a1aa;
-                        --accent: #3b82f6;
-                        --accent-hover: #2563eb;
-                        --font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+                        --bg-app: #1e1f22; 
+                        --bg-panel: #2b2d30;
+                        --bg-input: #1e1f22;
+                        --border: #393b40;
+                        --text-primary: #dfe1e5;
+                        --text-secondary: #9da0a8;
+                        --accent: #3574f0;
+                        --accent-hover: #3069d6;
+                        --font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
                     }
 
                     * { box-sizing: border-box; }
@@ -106,369 +168,218 @@ class AgentToolWindowFactory : ToolWindowFactory, DumbAware {
                         flex-direction: column;
                         overflow: hidden;
                         font-size: 13px;
+                        line-height: 1.4;
                     }
 
-                    /* Header (Diff/Context View Style) */
                     header {
-                        background: var(--bg-app);
                         padding: 12px 16px;
                         display: flex;
                         justify-content: space-between;
                         align-items: center;
-                        border-bottom: 1px solid var(--border);
                         flex-shrink: 0;
                     }
-                    .header-title {
-                        font-weight: 600;
-                        font-size: 20px;
-                        display: flex;
-                        align-items: center;
-                        gap: 12px;
-                    }
-                    .header-title img {
-                        width: 48px;
-                        height: 48px;
-                        object-fit: contain;
-                    }
-                    .header-actions {
-                        display: flex;
-                        gap: 8px;
-                    }
-                    .header-btn {
-                        background: transparent;
-                        border: none;
-                        color: var(--text-secondary);
-                        font-size: 12px;
-                        cursor: pointer;
-                        padding: 4px 8px;
-                        border-radius: 4px;
-                    }
-                    .header-btn:hover { background: var(--bg-panel); color: var(--text-primary); }
-                    .header-btn.primary { background: var(--accent); color: white; }
-                    .header-btn.primary:hover { background: var(--accent-hover); }
+                    .header-title { font-weight: 600; font-size: 14px; color: var(--text-primary); display: flex; align-items: center; gap: 8px;}
 
-                    /* Chat Area */
                     #chat-history {
                         flex: 1;
                         overflow-y: auto;
-                        padding: 16px;
+                        padding: 0;
                         display: flex;
                         flex-direction: column;
-                        gap: 20px;
+                        position: relative;
                     }
 
-                    /* Messages */
-                    .user-message {
-                        align-self: flex-end;
-                        background: var(--bg-input);
-                        padding: 10px 14px;
-                        border-radius: 12px;
-                        max-width: 85%;
-                        font-size: 13px;
-                        line-height: 1.5;
-                        color: var(--text-primary);
-                    }
-                    .agent-message {
-                        align-self: flex-start;
-                        max-width: 90%;
-                        font-size: 13px;
-                        line-height: 1.6;
-                        color: var(--text-secondary);
-                    }
-                    .agent-message strong { color: var(--text-primary); font-weight: 600; }
-                    
-                    /* Welcome Screen (Zeroth Case) */
                     .welcome-container {
                         display: flex;
                         flex-direction: column;
                         align-items: center;
                         justify-content: center;
-                        height: 100%;
+                        flex: 1;
+                        padding: 40px 20px;
                         text-align: center;
-                        color: var(--text-secondary);
-                        opacity: 0.8;
-                    }
-                    .welcome-container img {
-                        width: 48px;
-                        height: 48px;
-                        margin-bottom: 16px;
-                        opacity: 0.9;
-                    }
-                    .welcome-text {
-                        font-size: 14px;
-                        line-height: 1.6;
-                        max-width: 260px;
-                    }
-                    .welcome-text strong {
-                        color: var(--text-primary);
-                        font-weight: 600;
-                    }
-                    
-                    /* Hide chat history scrollbar when empty/welcome state to look cleaner */
-                    #chat-history:empty {
-                        overflow: hidden;
+                        background: radial-gradient(circle at 50% 20%, #2b2d30 0%, var(--bg-app) 70%);
                     }
 
-                    /* Input Area Container */
-                    .input-container {
-                        padding: 16px;
-                        background: var(--bg-app);
+                    .hero-art {
                         position: relative;
-                        z-index: 10;
-                    }
-
-                    /* Starter Chips */
-                    .starter-chips {
-                         display: flex;
-                         flex-wrap: wrap;
-                         gap: 8px;
-                         padding: 0 16px;
-                         margin-bottom: 20px;
-                         justify-content: center;
-                    }
-                    .chip-btn {
-                        background: var(--bg-panel);
-                        border: 1px solid var(--border);
-                        color: var(--text-secondary);
-                        padding: 6px 12px;
-                        border-radius: 16px;
-                        font-size: 11px;
-                        cursor: pointer;
-                        transition: all 0.2s;
-                    }
-                    .chip-btn:hover {
-                         color: var(--text-primary);
-                         border-color: var(--text-secondary);
-                         background: var(--bg-input);
-                    }
-                    
-                    /* The Main Input Box */
-                    .input-box {
-                        background: var(--bg-panel);
-                        border: 1px solid var(--border);
-                        border-radius: 12px;
-                        padding: 12px;
+                        width: 200px;
+                        height: 140px;
+                        margin-bottom: 24px;
                         display: flex;
-                        flex-direction: column;
-                        gap: 8px;
-                        transition: border-color 0.2s;
-                    }
-                    .input-box:focus-within {
-                        border-color: #71717a;
-                        box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.1);
-                    }
-
-                    textarea {
-                        background: transparent;
-                        border: none;
-                        color: var(--text-primary);
-                        font-family: var(--font-family);
-                        font-size: 13px;
-                        resize: none;
-                        outline: none;
-                        min-height: 24px;
-                        width: 100%;
-                        line-height: 1.5;
-                    }
-                    textarea::placeholder { color: #52525b; }
-
-                    /* Input Footer Controls */
-                    .input-controls {
-                        display: flex;
-                        justify-content: space-between;
-                        align-items: center;
-                        padding-top: 4px;
-                    }
-                    
-                    .left-controls {
-                        display: flex;
-                        align-items: center;
-                        gap: 6px;
-                    }
-                    
-                    .right-controls {
-                        display: flex;
-                        align-items: center;
-                        gap: 8px;
-                    }
-
-                    /* Buttons & Pills */
-                    .icon-btn {
-                        background: transparent;
-                        border: none;
-                        color: var(--text-secondary);
-                        cursor: pointer;
-                        padding: 4px;
-                        border-radius: 4px;
-                        display: flex;
-                        align-items: center;
                         justify-content: center;
-                        transition: color 0.15s;
+                        align-items: center;
                     }
-                    .icon-btn:hover { color: var(--text-primary); background: var(--bg-input); }
                     
-                    .pill-btn {
-                        background: transparent;
-                        border: none;
-                        color: var(--text-secondary);
-                        font-size: 11px;
-                        font-weight: 500;
-                        padding: 4px 8px;
-                        border-radius: 4px;
-                        cursor: pointer;
-                        display: flex;
-                        align-items: center;
-                        gap: 4px;
-                        transition: all 0.15s;
-                    }
-                    .pill-btn:hover { background: var(--bg-input); color: var(--text-primary); }
-                    .pill-btn span { font-size: 9px; opacity: 0.7; }
-
-                    .send-btn {
-                        background: var(--bg-input);
-                        color: var(--text-primary);
-                        border: none;
-                        border-radius: 8px;
-                        width: 28px;
-                        height: 28px;
-                        display: flex;
-                        align-items: center;
-                        justify-content: center;
-                        cursor: pointer;
-                        transition: all 0.15s;
-                    }
-                    .send-btn:hover { background: var(--text-secondary); color: var(--bg-app); }
-                    .send-btn svg { width: 14px; height: 14px; fill: currentColor; }
-
-                    /* Config Overlay */
-                    .settings-overlay {
+                    .bubble {
                         position: absolute;
-                        bottom: 80px;
-                        left: 16px;
-                        width: 280px;
-                        background: var(--bg-panel);
-                        border: 1px solid var(--border);
-                        border-radius: 8px;
-                        padding: 12px;
-                        display: none;
-                        box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.5);
+                        border-radius: 50%;
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                        box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+                        font-weight: 700;
+                        color: white;
+                        animation: float 6s ease-in-out infinite;
                     }
-                    .settings-overlay.open { display: block; }
-                    
-                    .form-group { margin-bottom: 12px; }
-                    .form-group label {
-                        display: block;
-                        font-size: 11px;
-                        color: var(--text-secondary);
-                        margin-bottom: 4px;
-                    }
-                    .form-group select, .form-group input {
-                        width: 100%;
-                        background: var(--bg-app);
+                    @keyframes float { 0% { transform: translateY(0px); } 50% { transform: translateY(-10px); } 100% { transform: translateY(0px); } }
+
+                    .b-main { width: 60px; height: 60px; background: linear-gradient(135deg, #fa7e23, #d95e16); z-index: 3; font-size: 24px; top: 30px; left: 60px; animation-delay: 0s; }
+                    .b-sec { width: 50px; height: 50px; background: linear-gradient(135deg, #3574f0, #2558c2); z-index: 2; top: 20px; right: 50px; animation-delay: 1s; opacity: 0.9; }
+                    .b-tri { width: 40px; height: 40px; background: #50a14f; z-index: 1; bottom: 30px; left: 80px; animation-delay: 2s; opacity: 0.8; }
+                    .b-glow { width: 140px; height: 140px; background: radial-gradient(circle, rgba(255,255,255,0.03) 0%, transparent 70%); position: absolute; z-index: 0; }
+
+                    .welcome-title { font-size: 20px; font-weight: 600; margin: 0 0 8px 0; color: var(--text-primary); }
+                    .welcome-subtitle { font-size: 13px; color: var(--text-secondary); max-width: 280px; margin: 0 auto 32px auto; line-height: 1.5; }
+
+                    .setup-btn {
+                        background: rgba(255,255,255,0.05);
                         border: 1px solid var(--border);
                         color: var(--text-primary);
-                        padding: 6px;
-                        border-radius: 4px;
-                        font-size: 12px;
-                    }
-                    .save-btn {
-                        width: 100%;
-                        background: var(--accent);
-                        color: white;
-                        border: none;
-                        padding: 8px;
-                        border-radius: 4px;
+                        padding: 10px 16px;
+                        border-radius: 6px;
+                        font-size: 13px;
                         cursor: pointer;
-                        font-size: 12px;
+                        display: inline-flex; align-items: center; gap: 8px;
                     }
+                    .setup-btn:hover { background: rgba(255,255,255,0.1); border-color: var(--text-secondary); }
 
+                    .user-message {
+                        align-self: flex-end; background: #2b2d30; padding: 10px 14px; border-radius: 12px;
+                        max-width: 85%; font-size: 13px; margin: 8px 16px; color: var(--text-primary); border: 1px solid var(--border);
+                    }
+                    .agent-message {
+                        align-self: flex-start; max-width: 90%; font-size: 13px; line-height: 1.6; color: var(--text-primary); margin: 8px 16px;
+                    }
+                    .agent-message strong { font-weight: 600; color: var(--text-primary); }
+                    
+                    .input-container { padding: 16px; background: var(--bg-app); border-top: 1px solid var(--border); }
+                    .input-box {
+                        background: var(--bg-input); border: 1px solid var(--border); border-radius: 8px;
+                        padding: 10px; display: flex; flex-direction: column; gap: 8px;
+                    }
+                    .input-box:focus-within { border-color: var(--text-secondary); }
+                    textarea {
+                        background: transparent; border: none; color: var(--text-primary);
+                        font-family: inherit; font-size: 13px; resize: none; outline: none;
+                        min-height: 24px; max-height: 150px;
+                    }
+                    .input-footer { display: flex; justify-content: space-between; align-items: center; margin-top: 4px; }
+                    .model-selector { font-size: 11px; color: var(--text-secondary); cursor: pointer; display: flex; align-items: center; gap: 4px; }
+                    .icon-btn { background: none; border: none; color: var(--text-secondary); cursor: pointer; padding: 4px; border-radius: 4px; }
+                    .icon-btn:hover { color: var(--text-primary); background: rgba(255,255,255,0.05); }
+
+                    .settings-overlay {
+                        position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.8);
+                        display: none; z-index: 100; align-items: center; justify-content: center;
+                    }
+                    .settings-overlay.open { display: flex; }
+                    .settings-card {
+                        background: var(--bg-panel); border: 1px solid var(--border); border-radius: 8px;
+                        padding: 24px; width: 300px; box-shadow: 0 10px 40px rgba(0,0,0,0.5);
+                    }
+                    .form-group { margin-bottom: 16px; }
+                    .form-group label { display: block; font-size: 11px; margin-bottom: 6px; color: var(--text-secondary); }
+                    .form-group select, .form-group input { 
+                        width: 100%; background: var(--bg-app); border: 1px solid var(--border); 
+                        color: var(--text-primary); padding: 8px; border-radius: 4px; font-size: 13px;
+                    }
+                    .save-btn { width: 100%; background: var(--accent); color: white; border: none; padding: 10px; border-radius: 4px; cursor: pointer; }
+                    
+                    .context-pill {
+                        background: var(--bg-app); border: 1px dashed var(--border); color: var(--text-secondary);
+                        font-size: 11px; padding: 4px 8px; border-radius: 4px; display: flex; align-items: center; gap: 6px; margin-bottom: 8px;
+                    }
+                    .context-remove { cursor: pointer; opacity: 0.6; }
+                    .context-remove:hover { opacity: 1; color: #ef4444; }
                   </style>
                 </head>
                 <body>
-                  
                   <header>
                     <div class="header-title">
-                       <img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACgAAAAoCAYAAACM/rhtAAAHzklEQVR4nO2YaWxU1xWAz71vmX083m3wSkMAu6GhLKVJCyapkhCSIkJn+NUqCaiJVKH8qiq1aZ8nVpJWSSCFNImUSKGqQtKZsJRWCiCoBwVRkxgwNnaMYzzet/Hs+1vuqd7YVKlSbEgM9AdHmnmjN+/c+91z7lnuA7gjd+T2CrlRBUSkPp+P6r8bfD5G3G4G/w+CiERCpF+5D0AlSfrK/VsOd/X3xb7oEl8MnzjbPum6dPhE3dX7NwuSXA8cIQQ/7postwvmP2UEw+P21tO86eiHQFJhzWrlj+KqZTtrfv5bvw7pnmeX07ngGhuBeM4MFjDFdDJttmwJt3VR+W1Jy4z1qiwZpvmx8Ka88VEfor8MwA04z5acdTAvAHW7CcuCXWKidVnHAGTFyxcob7FwluISPr8gj8SRZR2xeFXq3MnX3G5gUN9Fbgmgbj0XIdqxtjFLIgvbBsbTDBUQOMJNCiWlaywLqzc6jMaU3ZYnhCZjjKrZrYg9FcTl1ebTitccqHFmf44m+cpYBktiaVkPYTpSu/rQd9/Z91nVi78/qtjsp635RZTZi1Vjmc2gpnrW5JQb4OYDXhUlQ7lkBkg8jZDOIgSNpQ4EIOh0cpzFFgSjFYTFVQyKKajhaNk0YAPcfMDGxtzFIQiTcpYlYimOi0dTkEmrD5xt6bERr1djBmMVilYQV+YToDKCqirTyr6bD6inC0lCum2dPUCBtSMacDKUlQnvKD42UvwgInAMjffIS6zA1yo8REKEN3C909r1eNMBc9IAVJ+JZ9o+A0dJLK5iMoE4lcJN8GrTesfiQjtZJaucEuPUeDSSVBZdnFZ0slsC6G4ADQDJ/XW4nyWDQxzlxVA4RkiKrIlVFD5PVkwAYIRRLgpIuSOOqvtCiE5OT+y3BBAIQUnycQ/fW54UWfolu0EgYwGZ1fAj9bbl/RsUdRQx2c+pqbTCuPKX9eABqJs3uLkBdSs2NmiASB5dAvtioWj/gjyVblt+ABgNoBzuYwZLmtNYodtY+0w3eJyUkNvQ3UjNzbx+/cXu7t9dbt2H2LldTp3ZqGLraoy3PXkQCA+6a6ctOL+Sm3jOTsbrwkZEMdb5hw2iMg6x4BS1Q5h+lilX3pTXPQe4D3TXklz3Nb8yd8b3eqlevlJdbzxvF7MNqYlB1a5EyZlMJXktvGjMteipSf0xQtzzDjcnIKJEiculpXsOfovLhH8VH/BrdpbkWwOFdFdiIRgFY3zzEi579fEv6+rNbXMz8rkxZvo6RA+nf+bPxb7cApgaH3jWqqTETCLCpsYL468LNmaoNOYVgskoM40nhKj/YUAkXi9QvdFwA8wEjAAAGhDi0mZGJrnlTH9/A8ANbg0RucSppseU1BSqPQId7iv4dWwTt6OWE79TYLZU7O/YX4Uo9euFsd5bTwkhOoT2UTsuNYngLFe7fuCgY+WcMaMqBvqFSg0fLS1/0KsvBxEImQPy2u2WlHMNhs+/X4FadlGyN0XaPhUyoSf2vmfVlAme57Eoz25gmH4ul1q89bzL5dJaWlrsH1zQ9li1yIX71BMv3EvOPOTgeu7JwNCKBBd0JYxJT7P/yGG/328EkMiXjxM3BKj3W7oQLVaACojhf01Cn/Uu+vBDoDo4/sMMpxGWYrLBZNz5j55D290ul3zwtP/7n9OVLSUksXPt6F+MpjGf2h/ulrujl1hvvB9ah3rYucHLcjYfN7er7S/oC/OCl36jKDbVlqQT42lkYyGWsdaKj+4ObH7rx3veiwYTnX45JKYzScxwkXff+eTTv/cmyk7YUoFlqzv3qmJmEEZwlFcsAXEiC/Rkb9p/qGNUO9DaLRy/cFELqontLT0tdhdxabNZcRbAxtzeMBRtHcrG2YTI88ScDjJTVtvzm90X160orv5JIJEaODuahY6OOu3S1MrHSGTU/EDXW4xmxvmoOMLMprAaTpgOHB+zr9q19Y93IbP+SGYaO983QIci4YKESa6ZcdaNA+oFHz25wp+kBtshsbScLI+0aGYlXTrEyk6NX9hyoHpsh5kNb6UXh+ppyfjn2pN9byOXGIYJMqakIQLnsWb4E/7+V950vtyOCPyO7y0rslo5sJiNEE2mVZklktO2mNlPNxzFnXWol6/g8rtfCnYHti3wf1Hw1OAb8oHqp4WgUFkXjGhgkKOwTTlGHpk6QsEoa7EFjKc2Qg/hAujNGqqWGgdbPmjbNWUThfS50HilDKpSkV/IOQR718aqjXMeVWcF1F9r6NFctPanw5dfadqSUdjhVcnB/MVXXoRRQ5Wqv2ioyI6QAnWCYlkpMVWX8tSk+P+q0o//iexn1TZmHU0mIcRnigJZGYajSSjJLxMqreVYytt/SQhhTs/sifu6irvH6eRcXq92Ze+rd3PjoSYxEd2YryRtgqaBKoiQtZmBFhoGoMT+frxm6esL1rkCTX9rqr2CsWcZwOMaIYs4jjdYeGOm1FrSVs4XSs+sdR6/noP+dXcfubw4M9igx7MQRia+DelskSCoirnAMJB45IcdCxeuSun/N0vr+Q3uU3p10UsLt+fcn2uyHNqKwRF5esWWfj36JJSoe75bMx1ytjMvevRaO50ydOusl9b/ry1E5nLrfz38dUD1yRvr64mvszOnH+jqQqfHw67R6hNJkkgu8TdOH8a+zpx35I7AbZJ/A7Pa/LyInwCfAAAAAElFTkSuQmCC">
-                       <span>LISA Agent</span>
+                       LISA Agent
                     </div>
-                    <div class="header-actions">
-                       <img src="data:image/png;base64,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">
-                       <span>LISA Agent</span>
-                    </div>
-                    <div class="header-actions">
-                        <!-- Mimicking the 'Reject/Accept' style locally for effect, functional for 'Clear' -->
-                        <button class="header-btn" onclick="document.getElementById('chat-history').innerHTML = ''">Clear</button>
+                    <div>
+                        <button class="icon-btn" title="Clear Chat" onclick="window.location.reload()">
+                            <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0V6z"/><path fill-rule="evenodd" d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1v1zM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4H4.118zM2.5 3V2h11v1h-11z"/></svg>
+                        </button>
+                        <button class="icon-btn" title="Settings" onclick="document.getElementById('settings-panel').classList.add('open')">
+                            <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M9.405 1.05c-.413-1.4-2.397-1.4-2.81 0l-.1.34a1.464 1.464 0 0 1-2.105.872l-.31-.17c-1.283-.698-2.686.705-1.987 1.987l.169.311c.446.82.023 1.841-.872 2.105l-.34.1c-1.4.413-1.4 2.397 0 2.81l.34.1a1.464 1.464 0 0 1 .872 2.105l-.17.31c-.698 1.283.705 2.686 1.987 1.987l.311-.169a1.464 1.464 0 0 1 2.105.872l.1.34c.413 1.4 2.397 1.4 2.81 0l.1-.34a1.464 1.464 0 0 1 2.105-.872l.31.17c1.283.698 2.686-.705 1.987-1.987l-.169-.311a1.464 1.464 0 0 1 .872-2.105l.34-.1c1.4-.413 1.4-2.397 0-2.81l-.34-.1a1.464 1.464 0 0 1-.872-2.105l.17-.31c.698-1.283-.705-2.686-1.987-1.987l-.311.169a1.464 1.464 0 0 1-2.105-.872l-.1-.34zM8 10.93a2.929 2.929 0 1 1 0-5.86 2.929 2.929 0 0 1 0 5.86z"/></svg>
+                        </button>
                     </div>
                   </header>
 
                    <div id="chat-history">
                         <div class="welcome-container" id="welcome-screen">
-                             <div class="welcome-text">
-                                Hi! I'm ready to help.<br>
-                                Ask me anything or press <strong>CMD+L</strong> to start.
+                             <div class="hero-art">
+                                <div class="bubble b-glow"></div>
+                                <div class="bubble b-main">AI</div>
+                                <div class="bubble b-sec"></div>
+                                <div class="bubble b-tri"></div>
                              </div>
+                             <div class="welcome-title">Coding Agents. Ready When You Are.</div>
+                             <div class="welcome-subtitle">
+                                Meet your AI crew. Get seamless assistance from agents like Claude, Gemini, and Local Models.
+                             </div>
+                             
+                             <button class="setup-btn" onclick="document.getElementById('settings-panel').classList.add('open')">
+                                <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0a8 8 0 1 0 0 16A8 8 0 0 0 8 0zm0 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14z"/><path d="M11 7H8V4H7v3H4v1h3v3h1V8h3V7z"/></svg> 
+                                Bring Your Own API Key
+                             </button>
                         </div>
                   </div>
-                  
-                  <div id="starter-area" class="starter-chips">
-                       <button class="chip-btn" onclick="quickAction('Explain this code')">Explain Code</button>
-                       <button class="chip-btn" onclick="quickAction('Write unit tests for this')">Generate Tests</button>
-                       <button class="chip-btn" onclick="quickAction('Find bugs in this')">Find Bugs</button>
-                  </div>
+
+                    <div id="settings-panel" class="settings-overlay">
+                        <div class="settings-card">
+                            <h3 style="margin-top:0; font-size:14px; margin-bottom:16px; color:var(--text-primary);">Configuration</h3>
+                            <div class="form-group">
+                                <label>Provider</label>
+                                <select id="provider-select">
+                                    <option value="openai">OpenAI</option>
+                                    <option value="claude">Anthropic</option>
+                                    <option value="gemini">Gemini</option>
+                                    <option value="groq">Groq</option>
+                                    <option value="ollama">Ollama (Local)</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label>Model</label>
+                                <select id="model-select"></select>
+                            </div>
+                            <div class="form-group">
+                                <label>API Key</label>
+                                <input type="password" id="api-key" placeholder="Enter API Key" />
+                            </div>
+                            <div style="display:flex; gap:10px;">
+                                <button class="save-btn" onclick="document.getElementById('settings-panel').classList.remove('open')" style="background:transparent; border:1px solid var(--border);">Cancel</button>
+                                <button class="save-btn" id="save-config-btn">Save Configuration</button>
+                            </div>
+                        </div>
+                    </div>
 
                   <div class="input-container">
-                    
-                    <!-- Settings Panel -->
-                    <div id="settings-panel" class="settings-overlay">
-                        <div class="form-group">
-                            <label>Provider</label>
-                            <select id="provider-select">
-                                <option value="openai">OpenAI</option>
-                                <option value="anthropics">Anthropic</option>
-                                <option value="gemini">Gemini</option>
-                                <option value="groq">Groq</option>
-                            </select>
-                        </div>
-                        <div class="form-group">
-                            <label>Model</label>
-                            <select id="model-select"></select>
-                        </div>
-                        <div class="form-group">
-                            <label>API Key</label>
-                            <input type="password" id="api-key" placeholder="API Key" />
-                        </div>
-                        <button class="save-btn" id="save-config-btn">Save</button>
-                    </div>
-
+                    <div id="context-area" class="context-area"></div>
                     <div class="input-box">
-                        <textarea id="instruction" placeholder="Ask anything or help with what our LISA can do."></textarea>
-                        
-                        <div class="input-controls">
-                            <div class="left-controls">
-                                <button class="pill-btn" id="model-btn">
-                                    Gemini 3 Pro <span>⌄</span>
-                                </button>
+                        <textarea id="instruction" placeholder="Ask AI Assistant..."></textarea>
+                        <div class="input-footer">
+                            <div class="model-selector" id="model-btn">
+                                <span id="current-model-name">Model</span> <span>⌄</span>
                             </div>
-                            <div class="right-controls">
-                                <button class="icon-btn" id="mic-btn">🎤</button>
-                                <button class="send-btn" id="run-btn">
-                                    <svg viewBox="0 0 16 16"><path d="M1.72365 1.57467C1.19662 1.34026 0.655953 1.8817 0.891391 2.40871L3.08055 7.30906C3.12067 7.39886 3.12066 7.50207 3.08054 7.59187L0.891392 12.4922C0.655953 13.0192 1.19662 13.5607 1.72366 13.3262L14.7762 7.5251C15.32 7.28315 15.32 6.51778 14.7762 6.27583L1.72365 1.57467Z"/></svg>
+                            <div style="display:flex; gap:6px;">
+                                <button class="icon-btn" id="send-btn" style="color:var(--accent);">
+                                    <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M15.854.146a.5.5 0 0 1 .11.54l-5.819 14.547a.75.75 0 0 1-1.329.124l-3.178-4.995L.643 7.184a.75.75 0 0 1 .124-1.33L15.314.037a.5.5 0 0 1 .54.11ZM6.636 10.07l2.761 4.338L14.13 2.576 6.636 10.07Zm6.787-8.201L1.591 6.602l4.339 2.76 7.494-7.493Z"/></svg>
                                 </button>
                             </div>
                         </div>
                     </div>
                   </div>
 
-                  <!-- Logic Scripts -->
                   <div id="debug-log" style="display:none;"></div>
                   <script>
-                    // Core Elements
                     const chatHistory = document.getElementById('chat-history');
                     const instructionInput = document.getElementById('instruction');
-                    const runBtn = document.getElementById('run-btn');
-                    const micBtn = document.getElementById('mic-btn');
+                    const sendBtn = document.getElementById('send-btn');
+                    const contextArea = document.getElementById('context-area');
                     
-                    // Config Elements
                     const settingsPanel = document.getElementById('settings-panel');
                     const modelBtn = document.getElementById('model-btn');
                     const saveConfigBtn = document.getElementById('save-config-btn');
@@ -476,15 +387,15 @@ class AgentToolWindowFactory : ToolWindowFactory, DumbAware {
                     const modelSelect = document.getElementById('model-select');
                     const apiKeyInput = document.getElementById('api-key');
 
-                    // State
                     let currentAgent = 'chat';
+                    let attachedContext = null;
                     
-                    // Models Data
                      const models = {
-                        'openai': ['gpt-4-turbo', 'gpt-4o', 'gpt-3.5-turbo'],
-                        'anthropics': ['claude-3-opus-20240229', 'claude-3-sonnet-20240229', 'claude-3-haiku-20240307'],
-                        'gemini': ['gemini-1.5-pro', 'gemini-1.5-flash', 'gemini-pro'],
-                        'groq': ['llama3-70b-8192', 'mixtral-8x7b-32768', 'gemma-7b-it']
+                        'openai': ['gpt-4o', 'gpt-4-turbo', 'gpt-4', 'gpt-3.5-turbo', 'o1-preview', 'o1-mini'],
+                        'groq': ['llama-3.1-70b-versatile', 'llama-3.1-8b-instant', 'mixtral-8x7b-32768', 'gemma-7b-it'],
+                        'gemini': ['gemini-1.5-pro', 'gemini-1.5-flash', 'gemini-1.0-pro'],
+                        'claude': ['claude-3-5-sonnet-20240620', 'claude-3-opus-20240229', 'claude-3-sonnet-20240229', 'claude-3-haiku-20240307'],
+                        'ollama': ['llama3.2', 'llama3', 'mistral', 'codellama', 'deepseek-coder']
                     };
 
                     function updateModels() {
@@ -492,23 +403,17 @@ class AgentToolWindowFactory : ToolWindowFactory, DumbAware {
                         if (models[p]) {
                             modelSelect.innerHTML = models[p].map(m => `<option value="${'$'}{m}">${'$'}{m}</option>`).join('');
                         }
-                        // Update UI Pill
                         const currentModel = modelSelect.value || 'Model';
-                        // Simplify name for UI
                         let displayName = currentModel.split('-').map(s => s.charAt(0).toUpperCase() + s.slice(1)).join(' ');
-                        displayName = displayName.replace('Gpt', 'GPT').replace('Claude', 'Claude').replace('Gemini', 'Gemini');
                         if (displayName.length > 15) displayName = displayName.substring(0, 12) + '...';
-                        
-                        document.querySelector('#model-btn').innerHTML = `${'$'}{displayName} <span>⌄</span>`;
+                        document.getElementById('current-model-name').textContent = displayName;
                     }
 
                     providerSelect.addEventListener('change', updateModels);
                     modelSelect.addEventListener('change', updateModels);
                     
-                    // Toggle Settings
                     modelBtn.onclick = () => settingsPanel.classList.toggle('open');
                     
-                    // Save Config
                     saveConfigBtn.onclick = () => {
                         window.lisa.postMessage(JSON.stringify({
                             command: 'saveConfig',
@@ -517,27 +422,36 @@ class AgentToolWindowFactory : ToolWindowFactory, DumbAware {
                             apiKey: apiKeyInput.value
                         }));
                         settingsPanel.classList.remove('open');
-                        updateModels(); // Ensure label matches
+                        updateModels();
                     };
 
-                    // Auto-resize textarea
+                    function renderContextPill() {
+                        contextArea.innerHTML = '';
+                        if (attachedContext) {
+                            const pill = document.createElement('div');
+                            pill.className = 'context-pill';
+                            pill.innerHTML = `
+                                <span>${'$'}{attachedContext.file}</span>
+                                <span class="context-remove" onclick="removeContext()">×</span>
+                            `;
+                            contextArea.appendChild(pill);
+                        }
+                    }
+
+                    window.removeContext = function() {
+                        attachedContext = null;
+                        renderContextPill();
+                    };
+
                     instructionInput.addEventListener('input', function() {
                         this.style.height = 'auto';
                         this.style.height = (this.scrollHeight) + 'px';
                     });
 
-                    // Submit Logic
                     function submit() {
                         const text = instructionInput.value.trim();
                         if (!text) return;
                         
-                        // Hide starter chips
-                        const starterArea = document.getElementById('starter-area');
-                        if (starterArea) starterArea.style.display = 'none';
-                        
-                        
-                        // User Message UI
-                        // Remove welcome screen if it exists
                         const welcome = document.getElementById('welcome-screen');
                         if (welcome) welcome.remove();
 
@@ -548,14 +462,20 @@ class AgentToolWindowFactory : ToolWindowFactory, DumbAware {
                         
                         instructionInput.value = '';
                         instructionInput.style.height = 'auto';
-                        scrollToBottom();
+                        chatHistory.scrollTop = chatHistory.scrollHeight;
                         
-                        // Send to Backend
                          try {
+                             const loadingDiv = document.createElement('div');
+                             loadingDiv.className = 'agent-message';
+                             loadingDiv.id = 'lisa-thinking';
+                             loadingDiv.innerHTML = '<strong>LISA</strong><br><span style="opacity:0.7">Thinking...</span>';
+                             chatHistory.appendChild(loadingDiv);
+
                              window.lisa.postMessage(JSON.stringify({
                                  command: 'runAgent',
                                  agent: currentAgent,
-                                 instruction: text
+                                 instruction: text,
+                                 attachedContext: attachedContext
                              }));
                         } catch (e) {
                              console.error("Bridge Error", e);
@@ -567,7 +487,7 @@ class AgentToolWindowFactory : ToolWindowFactory, DumbAware {
                         submit();
                     };
 
-                    runBtn.onclick = submit;
+                    sendBtn.onclick = submit;
                     instructionInput.onkeydown = (e) => {
                         if(e.key === 'Enter' && !e.shiftKey) {
                             e.preventDefault();
@@ -575,22 +495,23 @@ class AgentToolWindowFactory : ToolWindowFactory, DumbAware {
                         }
                     };
                     
-                    function scrollToBottom() {
-                        chatHistory.scrollTop = chatHistory.scrollHeight;
-                    }
-
-                    // Message Listener for Agent Responses
-                     window.addEventListener('message', event => {
+                    window.addEventListener('message', event => {
                         const message = event.data; 
+                        
+                        const loading = document.getElementById('lisa-thinking');
+                        if (loading && (message.command === 'agentResponse' || (message.data && message.data.error))) {
+                            loading.remove();
+                        }
+
                         if (message && message.command === 'agentResponse') {
                             const result = message.data || {};
                             if (result.success) {
                                 const responseDiv = document.createElement('div');
                                 responseDiv.className = 'agent-message';
-                                // Simple markdown-ish bolding for now
-                                let content = result.data;
+                                let content = result.data || "";
                                 content = content.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
                                 content = content.replace(/`(.*?)`/g, '<code style="background:#333;padding:2px 4px;border-radius:3px;">$1</code>');
+                                content = content.replace(/\n/g, '<br>'); 
                                 responseDiv.innerHTML = `<strong>LISA</strong><br>${'$'}{content}`;
                                 chatHistory.appendChild(responseDiv);
                             } else {
@@ -600,11 +521,22 @@ class AgentToolWindowFactory : ToolWindowFactory, DumbAware {
                                 errDiv.textContent = `Error: ${'$'}{result.error}`;
                                 chatHistory.appendChild(errDiv);
                             }
-                            scrollToBottom();
+                            chatHistory.scrollTop = chatHistory.scrollHeight;
+                        }
+                        
+                        if (message && message.command === 'setContext') {
+                            if (message.file) {
+                                attachedContext = {
+                                    file: message.file,
+                                    content: message.content,
+                                    language: message.language
+                                };
+                                renderContextPill();
+                                instructionInput.focus();
+                            }
                         }
                      });
                      
-                     // Helper for JCEF compatibility
                     window.receiveMessage = function(jsonStr) {
                          try {
                              const msg = JSON.parse(jsonStr);
@@ -613,96 +545,12 @@ class AgentToolWindowFactory : ToolWindowFactory, DumbAware {
                          } catch (e) {}
                     };
 
-
-                    // Speech Recognition Logic
-                    // Speech Recognition Logic
-                    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-
-                    if (SpeechRecognition) {
-                        try {
-                            const recognition = new SpeechRecognition();
-                            recognition.continuous = false;
-                            recognition.interimResults = false;
-                            
-                            micBtn.onclick = () => {
-                                if (micBtn.classList.contains('listening')) {
-                                    try { recognition.stop(); } catch(e) {}
-                                    micBtn.classList.remove('listening');
-                                    micBtn.style.color = '';
-                                } else {
-                                    // Visual feedback immediately
-                                    micBtn.style.opacity = '0.5';
-                                    try {
-                                        recognition.start();
-                                    } catch (err) {
-                                        // Ignore 'already started' errors, just ensure UI reflects it
-                                        if (err.message.includes('already started')) {
-                                             micBtn.classList.add('listening');
-                                             micBtn.style.color = '#ef4444';
-                                             micBtn.style.opacity = '1';
-                                        } else {
-                                            alert('Failed to start speech recognition: ' + err.message);
-                                            micBtn.style.opacity = '1';
-                                        }
-                                    }
-                                }
-                            };
-                            
-                            recognition.onstart = () => {
-                                micBtn.classList.add('listening');
-                                micBtn.style.color = '#ef4444'; // Red when listening
-                                micBtn.style.opacity = '1';
-                            };
-                            
-                            recognition.onend = () => {
-                                micBtn.classList.remove('listening');
-                                micBtn.style.color = ''; 
-                                micBtn.style.opacity = '1';
-                            };
-                            
-                            recognition.onresult = (event) => {
-                                const transcript = event.results[0][0].transcript;
-                                instructionInput.value += (instructionInput.value ? ' ' : '') + transcript;
-                                instructionInput.style.height = 'auto';
-                                instructionInput.style.height = (instructionInput.scrollHeight) + 'px';
-                                instructionInput.focus();
-                            };
-                            
-                            recognition.onerror = (event) => {
-                                console.error('Speech error', event);
-                                micBtn.style.color = '';
-                                micBtn.style.opacity = '1';
-                                if (event.error === 'not-allowed') {
-                                    alert('Microphone access denied. Please check your OS settings for IntelliJ.');
-                                } else if (event.error === 'no-speech') {
-                                    // Quiet failure, just reset
-                                    micBtn.classList.remove('listening');
-                                } else {
-                                    // alert('Speech error: ' + event.error);
-                                }
-                            };
-                        } catch (e) {
-                             console.error("Speech Init Failed", e);
-                             micBtn.onclick = () => alert("Speech Recognition Initialization Failed: " + e.message);
-                        }
-                    } else {
-                        micBtn.style.opacity = '0.5';
-                        micBtn.onclick = () => {
-                            alert('Speech recognition is not supported in this IDE version (JCEF/Chromium limitation).');
-                        };
-                    }
-
-                    // Init
                     updateModels();
                     
-                    // Global Keyboard Shortcuts
                     window.addEventListener('keydown', (e) => {
-                        // CMD+L (Mac) or CTRL+L (Windows/Linux) to focus input
                         if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'l') {
                             e.preventDefault();
                             instructionInput.focus();
-                            // Optional: select all text if you want to overwrite
-                            // instructionInput.select(); 
                         }
                     });
                   </script>
@@ -715,34 +563,69 @@ class AgentToolWindowFactory : ToolWindowFactory, DumbAware {
         
         private fun debugLog(msg: String) {
              val escapedMsg = escapeJsonString(msg)
-             // Manually construct JSON to avoid nested quote issues
              val json = "{\"command\": \"debug\", \"message\": $escapedMsg}"
              val js = "if(window.receiveMessage) window.receiveMessage('$json');"
-             // Use invokeLater to run on EDT
              ApplicationManager.getApplication().invokeLater {
                  browser.cefBrowser.executeJavaScript(js, null, 0)
              }
         }
 
         private fun handleMessage(jsonStr: String) {
-            // Run on background thread to avoid blocking UI, but use Read Action for PSI access
             ApplicationManager.getApplication().executeOnPooledThread {
                 try {
-                    val command = extractJsonValue(jsonStr, "command")
-                    val agent = extractJsonValue(jsonStr, "agent")
-                    val instruction = extractJsonValue(jsonStr, "instruction")
+                    val jsonObject = com.google.gson.JsonParser.parseString(jsonStr).asJsonObject
+                    val command = jsonObject.get("command")?.asString ?: ""
                     
+                    if (command == "getContext") {
+                         ApplicationManager.getApplication().invokeLater {
+                             try {
+                                 val editor = FileEditorManager.getInstance(project).selectedTextEditor
+                                 if (editor != null) {
+                                     val file = editor.virtualFile
+                                     if (file != null) {
+                                         val fileName = file.name
+                                         val content = editor.document.text
+                                         val ext = file.extension ?: ""
+                                         val language = when(ext) {
+                                             "kt" -> "kotlin"
+                                             "ts", "js" -> "typescript"
+                                             "java" -> "java"
+                                             else -> ext
+                                         }
+                                         
+                                         val escapedName = escapeJsonString(fileName)
+                                         val escapedContent = escapeJsonString(content)
+                                         val escapedLang = escapeJsonString(language)
+                                         
+                                         val json = """{"command": "setContext", "file": $escapedName, "content": $escapedContent, "language": $escapedLang}"""
+                                          val js = "if(window.receiveMessage) window.receiveMessage('$json');"
+                                          browser.cefBrowser.executeJavaScript(js, null, 0)
+                                     }
+                                 } else {
+                                     browser.cefBrowser.executeJavaScript("alert('No active editor found. Please open a file to attach context.');", null, 0)
+                                 }
+                             } catch (e: Exception) {
+                                 debugLog("Error getting context: ${e.message}")
+                             }
+                         }
+                         return@executeOnPooledThread
+                    }
+                    
+                    if (command == "readProject") {
+                        readProject()
+                        return@executeOnPooledThread
+                    }
+
                     if (command == "saveConfig") {
                         debugLog("Kotlin: Received saveConfig")
-                        val provider = extractJsonValue(jsonStr, "provider")
-                        val model = extractJsonValue(jsonStr, "model")
-                        val apiKey = extractJsonValue(jsonStr, "apiKey")
+                        val provider = jsonObject.get("provider")?.asString ?: ""
+                        val model = jsonObject.get("model")?.asString ?: ""
+                        val apiKey = jsonObject.get("apiKey")?.asString ?: ""
                         
                         val lspManager = LspServerManager.getInstance(project)
                         val servers = lspManager.getServersForProvider(LisaLspServerSupportProvider::class.java)
                         
                         if (servers.isEmpty()) {
-                            debugLog("Kotlin: No LSP server for config save")
                             dispatchResponse(false, null, "LSP server not found")
                             return@executeOnPooledThread
                         }
@@ -755,16 +638,14 @@ class AgentToolWindowFactory : ToolWindowFactory, DumbAware {
                                 if (model.isNotEmpty()) configParams["model"] = model
                                 if (apiKey.isNotEmpty()) configParams["apiKey"] = apiKey
                                 
-                                debugLog("Kotlin: Sending config to LSP: $configParams")
-                                
-                                val response = server.sendRequest<Any> {
-                                    val future = (it as Endpoint).request("lisa/updateConfig", configParams) as CompletableFuture<Any>
-                                    future.orTimeout(5, java.util.concurrent.TimeUnit.SECONDS)
-                                }
-                                
-                                debugLog("Kotlin: Config response: $response")
-                                ApplicationManager.getApplication().invokeLater {
-                                    dispatchResponse(true, "Configuration saved successfully!", null)
+                                val future = invokeLspRequest(server, "lisa/updateConfig", configParams)
+                                if (future != null) {
+                                    future.get() 
+                                    ApplicationManager.getApplication().invokeLater {
+                                        dispatchResponse(true, "Configuration saved successfully!", null)
+                                    }
+                                } else {
+                                     throw Exception("No compatible sendRequest method found on " + server.javaClass.name + ". Methods: " + server.javaClass.methods.map { it.name }.joinToString(", "))
                                 }
                             } catch (e: Exception) {
                                 debugLog("Kotlin: Config save failed: ${e.message}")
@@ -777,19 +658,19 @@ class AgentToolWindowFactory : ToolWindowFactory, DumbAware {
                     }
 
                     if (command == "runAgent") {
+                        val agent = jsonObject.get("agent")?.asString ?: ""
+                        val instruction = jsonObject.get("instruction")?.asString ?: ""
                         debugLog("Kotlin: Received runAgent for $agent")
                         
                         val lspManager = LspServerManager.getInstance(project)
                         val servers = lspManager.getServersForProvider(LisaLspServerSupportProvider::class.java)
 
                         if (servers.isEmpty()) {
-                            debugLog("Kotlin: No LSP Servers found!")
                             dispatchResponse(false, null, "LISA Server not found. Please open a file in the editor.")
                             return@executeOnPooledThread
                         }
                         val server = servers.first()
 
-                        // READ ACTION REQUIRED: Accesing Editor/PSI
                         val contextData = mutableMapOf<String, String>()
                         
                         com.intellij.openapi.application.ApplicationManager.getApplication().runReadAction {
@@ -799,11 +680,18 @@ class AgentToolWindowFactory : ToolWindowFactory, DumbAware {
                                 contextData["fileContent"] = editor.document.text
                                 contextData["uri"] = editor.virtualFile?.url ?: ""
                                 contextData["languageId"] = editor.virtualFile?.fileType?.name?.lowercase() ?: ""
-                                // debugLog cannot be called inside read action easily if it touches UI, so we log after
                             }
                         }
-                        debugLog("Kotlin: Context captured.")
-
+                        
+                        if (jsonObject.has("attachedContext") && !jsonObject.get("attachedContext").isJsonNull) {
+                             val ac = jsonObject.getAsJsonObject("attachedContext")
+                             val acContent = ac.get("content")?.asString
+                             val acLang = ac.get("language")?.asString
+                             
+                             if (!acContent.isNullOrEmpty()) contextData["fileContent"] = acContent
+                             if (!acLang.isNullOrEmpty()) contextData["languageId"] = acLang
+                        }
+                        
                         var prompt = instruction
                         if (agent == "generateTests") prompt = "Generate unit tests for this code"
                         if (agent == "addJsDoc") prompt = "Add JSDoc documentation"
@@ -811,12 +699,9 @@ class AgentToolWindowFactory : ToolWindowFactory, DumbAware {
 
                         project.service<MyProjectService>().scope.launch {
                              try {
-                                debugLog("Kotlin: Sending workspace/executeCommand...")
-                                
-                                // Use standard LSP executeCommand
-                                val command = org.eclipse.lsp4j.ExecuteCommandParams()
-                                command.command = "lisa.chat"
-                                command.arguments = listOf(
+                                val commandParams = org.eclipse.lsp4j.ExecuteCommandParams()
+                                commandParams.command = "lisa.chat"
+                                commandParams.arguments = listOf(
                                     com.google.gson.JsonPrimitive(prompt),
                                     com.google.gson.JsonObject().apply {
                                         contextData.forEach { (key, value) ->
@@ -825,30 +710,21 @@ class AgentToolWindowFactory : ToolWindowFactory, DumbAware {
                                     }
                                 )
                                 
-                                val rawResponse = server.sendRequest<Any> {
-                                    val endpoint = it as Endpoint
-                                    @Suppress("UNCHECKED_CAST")
-                                    val future = endpoint.request("workspace/executeCommand", command) as CompletableFuture<Any>
-                                    future.orTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
-                                }
+                                val future = invokeLspRequest(server, "workspace/executeCommand", commandParams)
                                 
-                                debugLog("Kotlin: LSP Response Type: ${rawResponse?.javaClass?.name}")
-                                debugLog("Kotlin: LSP Response: ${rawResponse.toString()}")
+                                if (future == null) throw Exception("No compatible sendRequest method found on " + server.javaClass.name)
+
+                                val rawResponse = future.get()
                                 
-                                // Check if response is null
                                 if (rawResponse == null) {
-                                    debugLog("Kotlin: NULL response from LSP server!")
                                     ApplicationManager.getApplication().invokeLater {
-                                        dispatchResponse(false, null, "LSP server returned null. Please check if the API key is configured.")
+                                        dispatchResponse(false, null, "LSP server returned null.")
                                     }
                                     return@launch
                                 }
                                 
-                                // Handle response - it should be a string now
                                 val actualResult = rawResponse.toString()
-                                debugLog("Kotlin: Extracted Result: $actualResult")
                                 
-                                // Check if it's an error
                                 if (actualResult.startsWith("ERROR:")) {
                                     ApplicationManager.getApplication().invokeLater {
                                         dispatchResponse(false, null, actualResult.substring(7))
@@ -857,7 +733,7 @@ class AgentToolWindowFactory : ToolWindowFactory, DumbAware {
                                 }
                                 
                                 ApplicationManager.getApplication().invokeLater {
-                                     dispatchResponse(true, actualResult, null)
+                                    dispatchResponse(true, actualResult, null)
                                 }
                              } catch (e: Exception) {
                                 debugLog("Kotlin: LSP Request FAILED: ${e.message}")
@@ -876,6 +752,70 @@ class AgentToolWindowFactory : ToolWindowFactory, DumbAware {
                 }
             }
         }
+        
+        // Helper to invoke sendRequest via reflection supporting Direct Server Access, Lambda (Modern), and Legacy styles
+        private fun invokeLspRequest(server: Any, lspMethod: String, params: Any): CompletableFuture<Any>? {
+            val serverClass = server.javaClass
+            
+            // Strategy 1: Get underlying lsp4jServer directly (Most Robust)
+            // This works by finding the accessor method (often mangled with $intellij_platform_lsp_impl)
+            // and invoking methods directly on the Endpoint/LanguageServer interface, avoiding Kotlin lambda type mismatches.
+            try {
+                val getServerMethod = serverClass.methods.find { it.name.startsWith("getLsp4jServer") }
+                if (getServerMethod != null) {
+                    getServerMethod.isAccessible = true
+                    val ls = getServerMethod.invoke(server)
+                    
+                    if (ls != null) {
+                         // Check for LanguageServer for executeCommand (which is on WorkspaceService)
+                         if (lspMethod == "workspace/executeCommand" && ls is LanguageServer && params is org.eclipse.lsp4j.ExecuteCommandParams) {
+                             return ls.workspaceService.executeCommand(params) as? CompletableFuture<Any>
+                         } 
+                         // Check for Endpoint for generic requests
+                         else if (ls is Endpoint) {
+                             return ls.request(lspMethod, params) as? CompletableFuture<Any>
+                         }
+                    }
+                }
+            } catch (e: Exception) {
+                // Ignore and try next strategy
+            }
+            
+            // Strategy 2: Modern API (sendRequest { ls -> ... })
+            val lambda = { ls: Any ->
+                if (lspMethod == "workspace/executeCommand" && ls is LanguageServer && params is org.eclipse.lsp4j.ExecuteCommandParams) {
+                     ls.workspaceService.executeCommand(params)
+                } else if (ls is Endpoint) {
+                     ls.request(lspMethod, params)
+                } else {
+                     throw RuntimeException("LanguageServer proxy $ls does not support Endpoint or LanguageServer interface for method $lspMethod")
+                }
+            }
+            
+            val modernCandidates = serverClass.methods.filter { it.name == "sendRequest" }
+            for (m in modernCandidates) {
+                try {
+                     return m.invoke(server, lambda) as? CompletableFuture<Any>
+                } catch (e: Exception) {
+                     // ignore
+                }
+            }
+        
+            // Strategy 3: Legacy API (sendRequestAsync(String, Object))
+            val legacyCandidates = serverClass.methods.filter { it.name == "sendRequestAsync" || it.name == "sendRequest" || it.name == "request" }
+            for (m in legacyCandidates) {
+                try {
+                    // Avoid re-invoking the function-based sendRequest which we tried in Strategy 2
+                    if (m.parameterTypes.isNotEmpty() && !m.parameterTypes[0].name.contains("Function")) {
+                        return m.invoke(server, lspMethod, params) as? CompletableFuture<Any>
+                    }
+                } catch (e: Exception) {
+                    // ignore
+                }
+            }
+            
+            return null
+        }
 
         private fun dispatchResponse(success: Boolean, data: Any?, error: String?) {
             val successStr = if (success) "true" else "false"
@@ -893,11 +833,8 @@ class AgentToolWindowFactory : ToolWindowFactory, DumbAware {
                 }
             """.trimIndent()
             
-            // Encode the JSON string itself into a JS string literal
             val jsArg = escapeJsonString(jsonMsg)
             
-            // IMPORTANT FIX: Pass "about:blank" or null as the URL
-            // Passing browser.cefBrowser.url when loaded via loadHTML often fails security checks
             val runJs = """
                 if (window.receiveMessage) {
                     window.receiveMessage($jsArg);
@@ -906,7 +843,6 @@ class AgentToolWindowFactory : ToolWindowFactory, DumbAware {
                 }
             """.trimIndent()
 
-            // Try executeJavaScript with null URL to bypass strict origin checks for data/html content
             browser.cefBrowser.executeJavaScript(runJs, null, 0)
         }
 

@@ -29,10 +29,10 @@ class LisaExecuteAction : AnAction() {
             
             project.service<MyProjectService>().scope.launch {
                 try {
-                    // LspServer.sendRequest is a suspend function that returns the response directly
-                    val response = server.sendRequest<Any> {
-                        (it as Endpoint).request("lisa/execute", command) as CompletableFuture<Any>
-                    }
+                    // Use reflection
+                    val method = server.javaClass.getMethod("sendRequestAsync", String::class.java, Object::class.java)
+                    val responseFuture = method.invoke(server, "lisa/execute", command) as CompletableFuture<Any>
+                    val response = responseFuture.get()
                     
                     // This ensures the response is handled on the UI thread
                     com.intellij.openapi.application.ApplicationManager.getApplication().invokeLater {

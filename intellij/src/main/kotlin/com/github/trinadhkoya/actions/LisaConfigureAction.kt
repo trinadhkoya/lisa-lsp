@@ -38,9 +38,9 @@ class LisaConfigureAction : AnAction() {
                     "model" to model
                 )
 
-                server.sendRequest<Any> {
-                    (it as Endpoint).request("lisa/updateConfig", configParams) as CompletableFuture<Any>
-                }
+                val method = server.javaClass.getMethod("sendRequestAsync", String::class.java, Object::class.java)
+                val future = method.invoke(server, "lisa/updateConfig", configParams) as CompletableFuture<Any>
+                future.get() // Wait for completion
                 
                 com.intellij.openapi.application.ApplicationManager.getApplication().invokeLater {
                     Messages.showInfoMessage("LISA Configuration Updated!", "Success")

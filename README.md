@@ -18,6 +18,22 @@ LISA is an AI-powered coding assistant that integrates seamlessly with VS Code a
 - 🎨 **Modern UI** - Clean, intuitive interface inspired by modern design principles
 - 🔌 **Multi-Provider Support** - Works with OpenAI, Google Gemini, Anthropic Claude, and Groq
 
+## 🆕 What's New in v1.1.17
+
+### 🧠 Smart Test Generation (Intelligent Merging)
+LISA now understands your existing test suite structure!
+- **Auto-Detection**: Automatically finds existing test files (e.g., `UserService.test.ts`, `ServiceSpec.kt`) or `__tests__` folders.
+- **Smart Merging**: Instead of overwriting files, LISA **merges new test cases** into your existing test files, preserving your setup and imports.
+- **Creation**: If no tests exist, it intelligently creates the file in the correct location (e.g., inside `__tests__` or alongside the source).
+
+### ⚡ Direct Code Editing (IntelliJ)
+Experience seamless AI integration directly in your editor.
+- **Refactoring**: Select code and ask LISA to refactor it (e.g., "Extract this to a function"). The changes are applied **directly** to your editor—no copy-pasting required!
+- **Documentation**: Ask to "Add JSDoc" or "Add Docs", and LISA will insert professional documentation comments instantly.
+
+### 💭 Live "Thinking" Indicator
+- LISA now shows a **"Thinking..."** status in the chat while processing your request, so you always know when it's working hard for you.
+
 ---
 
 ## 📦 Installation

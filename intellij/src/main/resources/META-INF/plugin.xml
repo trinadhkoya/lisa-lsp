@@ -12,8 +12,21 @@
 
     <extensions defaultExtensionNs="com.intellij">
         <platform.lsp.serverSupportProvider implementation="com.github.trinadhkoya.LisaLspServerSupportProvider"/>
-        <toolWindow id="LISA Agent Manager" secondary="true" icon="/icons/lisa.png" anchor="right"
+        <toolWindow id="LISA Agent" secondary="false" icon="/icons/lisa.png" anchor="right"
                     factoryClass="com.github.trinadhkoya.toolwindow.AgentToolWindowFactory"/>
+
+        <intentionAction>
+            <className>com.github.trinadhkoya.actions.LisaRefactorAction</className>
+            <category>LISA</category>
+        </intentionAction>
+        <intentionAction>
+            <className>com.github.trinadhkoya.actions.LisaAddDocsAction</className>
+            <category>LISA</category>
+        </intentionAction>
+        <intentionAction>
+            <className>com.github.trinadhkoya.actions.LisaGenerateTestsAction</className>
+            <category>LISA</category>
+        </intentionAction>
     </extensions>
 
     <actions>

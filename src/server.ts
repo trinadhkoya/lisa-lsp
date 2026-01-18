@@ -40,7 +40,7 @@ interface McpConfig {
 let currentConfig: McpConfig = {
     provider: 'openai',
     apiKey: OPENAI_API_KEY,
-    model: 'gpt-4-turbo-preview'
+    model: 'gpt-4o'
 };
 
 interface AiMessage {
@@ -173,7 +173,11 @@ async function handleGenerateTests(code: string, context: any) {
     RULES:
     1. Use simple, standard frameworks (Jest, JUnit, etc.).
     2. Return ONLY the code.
-    3. ${existingTest ? `Follow style of:\n${existingTest}\n` : ''}
+    3. ${existingTest ? `Existing Test File Content:\n${existingTest}\n
+       INSTRUCTION: The user wants to add/update tests for the provided code.
+       - If tests for this function already exist in the file, UPDATE them with better cases.
+       - If they do not exist, APPEND them to the appropriate class/describe block.
+       - Return the FULL merged file content, not just the snippet.` : 'Generate a new test file with all necessary imports and setup.'}
     4. ${fileStructure ? `File Context:\n${fileStructure}` : ''}`;
 
     return await callAi([
@@ -258,7 +262,6 @@ connection.onExecuteCommand(async (params: ExecuteCommandParams) => {
 connection.onRequest('lisa/execute', async (params: any) => {
     const command = typeof params === 'string' ? params : params.command;
     const context = typeof params === 'string' ? {} : params.context;
-    const requestId = params.requestId || Date.now().toString();
 
     debugLog(`lisa/execute: ${command}`);
 
@@ -301,22 +304,21 @@ connection.onRequest('lisa/execute', async (params: any) => {
                 result = await callAi([{ role: 'user', content: command }]);
         }
 
-        // Return structured result for client
-        const responseData = { success: true, data: result, action: intent.action };
-
-        // Notify client (legacy pattern)
-        connection.sendNotification('lisa/executeResult', { requestId, result: responseData });
-
-        return { acknowledged: true, requestId };
+        // Return structured result for client directly
+        return {
+            success: true,
+            data: result,
+            action: intent.action
+        };
 
     } catch (err) {
         const errorMsg = err instanceof Error ? err.message : String(err);
         debugLog(`lisa/execute error: ${errorMsg}`);
-        connection.sendNotification('lisa/executeResult', {
-            requestId,
-            result: { success: false, error: errorMsg }
-        });
-        return { acknowledged: true, error: true };
+        // Return error result directly
+        return {
+            success: false,
+            error: errorMsg
+        };
     }
 });
 

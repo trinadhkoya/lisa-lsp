@@ -58,7 +58,7 @@ debugLog('Server process started (Refactored Version)');
 let currentConfig = {
     provider: 'openai',
     apiKey: config_1.OPENAI_API_KEY,
-    model: 'gpt-4-turbo-preview'
+    model: 'gpt-4o'
 };
 class OpenAiProvider {
     client = null;
@@ -237,7 +237,6 @@ connection.onExecuteCommand(async (params) => {
 connection.onRequest('lisa/execute', async (params) => {
     const command = typeof params === 'string' ? params : params.command;
     const context = typeof params === 'string' ? {} : params.context;
-    const requestId = params.requestId || Date.now().toString();
     debugLog(`lisa/execute: ${command}`);
     try {
         // AI Intent Classification
@@ -274,20 +273,21 @@ connection.onRequest('lisa/execute', async (params) => {
             default:
                 result = await callAi([{ role: 'user', content: command }]);
         }
-        // Return structured result for client
-        const responseData = { success: true, data: result, action: intent.action };
-        // Notify client (legacy pattern)
-        connection.sendNotification('lisa/executeResult', { requestId, result: responseData });
-        return { acknowledged: true, requestId };
+        // Return structured result for client directly
+        return {
+            success: true,
+            data: result,
+            action: intent.action
+        };
     }
     catch (err) {
         const errorMsg = err instanceof Error ? err.message : String(err);
         debugLog(`lisa/execute error: ${errorMsg}`);
-        connection.sendNotification('lisa/executeResult', {
-            requestId,
-            result: { success: false, error: errorMsg }
-        });
-        return { acknowledged: true, error: true };
+        // Return error result directly
+        return {
+            success: false,
+            error: errorMsg
+        };
     }
 });
 connection.listen();

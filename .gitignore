@@ -16,3 +16,6 @@ intellij/build/
 intellij/.gradle/
 intellij/.idea/
 intellij/out/
+
+# SSL Certificates
+**/zscaler-root.crt

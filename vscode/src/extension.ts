@@ -1,8 +1,9 @@
 import * as path from 'path';
 import * as fs from 'fs';
-import { ExtensionContext, commands, window, workspace, ProgressLocation, OutputChannel, TextEditor, Uri } from 'vscode';
+import { ExtensionContext, commands, window, workspace, ProgressLocation, OutputChannel, TextEditor, Uri, languages, WorkspaceEdit } from 'vscode';
 import { LanguageClient, LanguageClientOptions, ServerOptions, TransportKind } from 'vscode-languageclient/node';
 import { AgentPanel } from './panels/AgentPanel';
+import { LisaCodeActionProvider } from './providers/CodeActionProvider';
 
 let client: LanguageClient;
 let outputChannel: OutputChannel;
@@ -17,32 +18,23 @@ async function getTestContext(editor: TextEditor): Promise<{ existingTestContent
     let existingTestContent = '';
     let foundPath = '';
 
-    // 1. Check for standard test folders or sibling test files
-    const testPatterns = [
-        activeUri.fsPath.replace(/\.(ts|js|jsx|tsx)$/, '.test.$1'),
-        activeUri.fsPath.replace(/\.(ts|js|jsx|tsx)$/, '.spec.$1'),
-        path.join(dir, '__tests__', path.basename(activeUri.fsPath).replace(/\.(ts|js|jsx|tsx)$/, '.test.$1')),
-        path.join(dir, 'tests', path.basename(activeUri.fsPath).replace(/\.(ts|js|jsx|tsx)$/, '.test.$1'))
+    // 1. Check for EXACT matching test file (sibling or in __tests__)
+    // e.g. foo.ts -> foo.test.ts or __tests__/foo.test.ts
+    const fileName = path.basename(activeUri.fsPath);
+    const nameNoExt = fileName.replace(/\.[^/.]+$/, "");
+    const ext = fileName.split('.').pop();
+
+    // Pattern: name.test.ext or name.spec.ext
+    const candidates = [
+        path.join(dir, `${nameNoExt}.test.${ext}`),
+        path.join(dir, `${nameNoExt}.spec.${ext}`),
+        path.join(dir, '__tests__', `${nameNoExt}.test.${ext}`),
+        path.join(dir, '__tests__', `${nameNoExt}.spec.${ext}`),
+        path.join(dir, 'tests', `${nameNoExt}.test.${ext}`),
+        path.join(dir, 'tests', `${nameNoExt}.spec.${ext}`)
     ];
 
-    // Try to find ANY test file in the directory to serve as a pattern if the specific test doesn't exist
-    if (!testPatterns.some(p => fs.existsSync(p))) {
-        try {
-            const files = fs.readdirSync(dir);
-            const anyTest = files.find(f => f.includes('.test.') || f.includes('.spec.'));
-            if (anyTest) {
-                testPatterns.push(path.join(dir, anyTest));
-            } else {
-                // Check subdir
-                if (fs.existsSync(path.join(dir, '__tests__'))) {
-                    const subFiles = fs.readdirSync(path.join(dir, '__tests__'));
-                    if (subFiles.length > 0) testPatterns.push(path.join(dir, '__tests__', subFiles[0]));
-                }
-            }
-        } catch (e) { }
-    }
-
-    for (const p of testPatterns) {
+    for (const p of candidates) {
         if (fs.existsSync(p)) {
             existingTestContent = fs.readFileSync(p, 'utf-8');
             foundPath = p;
@@ -50,10 +42,10 @@ async function getTestContext(editor: TextEditor): Promise<{ existingTestContent
         }
     }
 
-    // Structure Info for Imports
+    // Structure Info
     const sourceRelative = workspace.asRelativePath(activeUri);
-    const testRelative = foundPath ? workspace.asRelativePath(foundPath) : 'Unknown (New File)';
-    const fileStructureInfo = `Source File: ${sourceRelative}\nTarget Test File Location: ${testRelative !== 'Unknown (New File)' ? testRelative : 'Should be placed alongside source or in __tests__ folder'}`;
+    const testRelative = foundPath ? workspace.asRelativePath(foundPath) : 'New File (autodetect)';
+    const fileStructureInfo = `Source File: ${sourceRelative}\nTarget Test File: ${testRelative}`;
 
     return { existingTestContent, fileStructureInfo };
 }
@@ -63,38 +55,62 @@ async function handleTestGenerationResponse(res: any) {
     if (res.success && res.action === 'generateTests' && res.data) {
         const activeUri = window.activeTextEditor?.document.uri;
         if (activeUri) {
-            // Determine Test File Path - Be Smarter about Location
-            const wsFolder = workspace.getWorkspaceFolder(activeUri);
-            let testPath = activeUri.fsPath.replace(/\.(ts|js|jsx|tsx)$/, '.test.$1'); // Default: sibling
+            const dir = path.dirname(activeUri.fsPath);
+            const fileName = path.basename(activeUri.fsPath);
+            const nameNoExt = fileName.replace(/\.[^/.]+$/, "");
+            const ext = fileName.split('.').pop();
 
-            // Check for standard test folders
-            if (wsFolder) {
-                const fileDir = path.dirname(activeUri.fsPath);
-                const possibleDirs = [
-                    path.join(fileDir, '__tests__'),
-                    path.join(fileDir, 'tests'),
-                    path.join(wsFolder.uri.fsPath, '__tests__'),
-                    path.join(wsFolder.uri.fsPath, 'tests')
-                ];
+            let targetPath = '';
 
-                for (const dir of possibleDirs) {
-                    if (fs.existsSync(dir)) {
-                        const fileName = path.basename(activeUri.fsPath).replace(/\.(ts|js|jsx|tsx)$/, '.test.$1');
-                        testPath = path.join(dir, fileName);
-                        break;
+            // 1. Check if we already have an existing test file to OVERWRITE/UPDATE
+            const candidates = [
+                path.join(dir, `${nameNoExt}.test.${ext}`),
+                path.join(dir, `${nameNoExt}.spec.${ext}`),
+                path.join(dir, '__tests__', `${nameNoExt}.test.${ext}`),
+                path.join(dir, '__tests__', `${nameNoExt}.spec.${ext}`),
+                path.join(dir, 'tests', `${nameNoExt}.test.${ext}`)
+            ];
+
+            for (const p of candidates) {
+                if (fs.existsSync(p)) {
+                    targetPath = p;
+                    break;
+                }
+            }
+
+            // 2. If no existing file, decide where to create new one
+            if (!targetPath) {
+                // Prefer __tests__ folder if it exists or if we should create it
+                const testsDir = path.join(dir, '__tests__');
+                if (fs.existsSync(testsDir)) {
+                    targetPath = path.join(testsDir, `${nameNoExt}.test.${ext}`);
+                } else {
+                    // Check 'tests' folder
+                    const simpleTestsDir = path.join(dir, 'tests');
+                    if (fs.existsSync(simpleTestsDir)) {
+                        targetPath = path.join(simpleTestsDir, `${nameNoExt}.test.${ext}`);
+                    } else {
+                        // Create __tests__ by default
+                        try {
+                            fs.mkdirSync(testsDir);
+                            targetPath = path.join(testsDir, `${nameNoExt}.test.${ext}`);
+                        } catch {
+                            // Fallback to sibling
+                            targetPath = path.join(dir, `${nameNoExt}.test.${ext}`);
+                        }
                     }
                 }
             }
 
-            // Write File
+            // Write File (Full content from Server)
             try {
-                fs.mkdirSync(path.dirname(testPath), { recursive: true });
-                fs.writeFileSync(testPath, res.data);
+                fs.mkdirSync(path.dirname(targetPath), { recursive: true });
+                fs.writeFileSync(targetPath, res.data);
 
                 // Open Document
-                const doc = await workspace.openTextDocument(testPath);
+                const doc = await workspace.openTextDocument(targetPath);
                 await window.showTextDocument(doc);
-                window.showInformationMessage(`Tests generated at: ${workspace.asRelativePath(testPath)}`);
+                window.showInformationMessage(`Tests generated/updated at: ${workspace.asRelativePath(targetPath)}`);
             } catch (err) {
                 window.showErrorMessage(`Failed to write test file: ${err}`);
             }
@@ -173,10 +189,10 @@ export async function activate(context: ExtensionContext) {
                 if (!apiKey) return;
 
                 const models: Record<string, string[]> = {
-                    'openai': ['gpt-4', 'gpt-4-turbo', 'gpt-3.5-turbo'],
-                    'groq': ['llama2-70b-4096', 'mixtral-8x7b-32768', 'gemma-7b-it'],
-                    'gemini': ['gemini-pro', 'gemini-1.5-flash', 'gemini-1.5-pro'],
-                    'claude': ['claude-3-opus-20240229', 'claude-3-sonnet-20240229', 'claude-3-haiku-20240307']
+                    'openai': ['gpt-5-2025-08-07', 'gpt-4o', 'o3'],
+                    'groq': ['grok-4', 'llama-3.3-70b-versatile', 'mistral-saba-24b'],
+                    'gemini': ['gemini-3-flash', 'gemini-3-pro', 'gemini-2.5-pro'],
+                    'claude': ['claude-opus-4-5-20251101', 'claude-sonnet-4-5-20250929', 'claude-haiku-4-5-20251001']
                 };
 
                 const model = await window.showQuickPick(models[provider] || [], {
@@ -200,16 +216,21 @@ export async function activate(context: ExtensionContext) {
             })
         );
 
+        // 4. Register Code Actions
+        context.subscriptions.push(
+            languages.registerCodeActionsProvider('*', new LisaCodeActionProvider(), {
+                providedCodeActionKinds: LisaCodeActionProvider.providedCodeActionKinds
+            })
+        );
 
-        // 3. Agent Manager UI
-        // Import AgentPanel (ensure imports are added at top via VS Code auto-import or manual add)
-        // Manual import injection needed if not present, but for replace tool strictness, I'll add logic here.
+        // 5. Code Action Command Handler
+
 
         context.subscriptions.push(
             commands.registerCommand('lisa.openAgentManager', async () => {
                 AgentPanel.render(context.extensionUri);
 
-                // 1. Send context (Current File/Selection)
+                // 1. Send context
                 const editor = window.activeTextEditor;
                 if (editor && AgentPanel.currentPanel) {
                     const fileName = editor.document.uri.path.split('/').pop();
@@ -220,7 +241,7 @@ export async function activate(context: ExtensionContext) {
                     });
                 }
 
-                // 2. Send Saved Configuration (Provider, Model, API Key)
+                // 2. Config
                 if (AgentPanel.currentPanel) {
                     const savedProvider = context.globalState.get<string>('lisaProvider');
                     const savedModel = context.globalState.get<string>('lisaModel');
@@ -231,6 +252,129 @@ export async function activate(context: ExtensionContext) {
                         provider: savedProvider,
                         model: savedModel,
                         apiKey: savedApiKey
+                    });
+                }
+            })
+        );
+
+        // 6. Project Context Command (Permission First)
+        context.subscriptions.push(
+            commands.registerCommand('lisa.readProject', async () => {
+                // 1. Ask Permission
+                const selection = await window.showInformationMessage(
+                    "Allow LISA to scan and index your project files? This will read file names and structure to provide better context.",
+                    "Yes", "No"
+                );
+
+                if (selection !== 'Yes') {
+                    return;
+                }
+
+                // 2. Scan Project
+                await window.withProgress({
+                    location: ProgressLocation.Notification,
+                    title: "LISA: Scanning Project...",
+                    cancellable: false
+                }, async () => {
+                    const files = await workspace.findFiles('**/*', '{**/node_modules/**,**/.git/**,**/dist/**,**/out/**}');
+                    const fileList = files.map(f => workspace.asRelativePath(f)).join('\n');
+
+                    // 3. Send to Agent Panel
+                    if (AgentPanel.currentPanel) {
+                        window.showWarningMessage("LISA Agent Panel is not open.");
+                    }
+                });
+            }),
+
+            commands.registerCommand('lisa.runAction', async (args: any) => {
+                if (!client || !client.isRunning()) {
+                    window.showErrorMessage('LISA Server is not running.');
+                    return;
+                }
+
+                const { action, file, selection, language } = args;
+                // action: 'refactor' | 'addDocs' | 'generateTests'
+
+                const contextData = {
+                    selection: selection || '',
+                    fileContent: file ? fs.readFileSync(file, 'utf-8') : '',
+                    languageId: language || 'plaintext',
+                    uri: file ? Uri.file(file).toString() : '',
+                    // ...(file ? await getTestContext(...) : {}) // Maybe add test context if needed
+                };
+
+                let prompt = '';
+                let actionOverride = '';
+
+                if (action === 'refactor') {
+                    prompt = `Refactor this code: ${selection}`;
+                    actionOverride = 'refactor';
+                } else if (action === 'addDocs') {
+                    prompt = 'Add JSDoc documentation';
+                    actionOverride = 'addJsDoc'; // Map 'addDocs' -> 'addJsDoc' for consistency
+                } else if (action === 'generateTests') {
+                    prompt = 'Generate unit tests for this code';
+                    actionOverride = 'generateTests';
+                }
+
+                if (prompt) {
+                    await window.withProgress({
+                        location: ProgressLocation.Notification,
+                        title: `LISA: Running ${actionOverride}...`,
+                        cancellable: false
+                    }, async () => {
+                        try {
+                            const response: any = await client.sendRequest('lisa/execute', {
+                                command: prompt,
+                                context: contextData
+                            });
+
+                            // Reuse logic from lisa.execute / message handler
+
+                            // 1. Generate Tests
+                            const res: any = response;
+                            const handledTest = await handleTestGenerationResponse(res);
+                            if (handledTest) return;
+
+                            // 2. Inline Edits
+                            if (actionOverride === 'refactor' || actionOverride === 'addJsDoc') {
+                                if (res.success && res.data) {
+                                    // Apply to editor
+                                    const editor = window.visibleTextEditors.find(e => e.document.uri.fsPath === file) || window.activeTextEditor;
+                                    if (editor) {
+                                        const edit = new WorkspaceEdit();
+                                        let replacementText = res.data;
+
+                                        // Markdown stripping logic
+                                        if (replacementText.startsWith('```') && replacementText.endsWith('```')) {
+                                            const lines = replacementText.split('\n');
+                                            replacementText = lines.slice(1, -1).join('\n');
+                                        } else if (replacementText.startsWith('```')) {
+                                            const lines = replacementText.split('\n');
+                                            if (lines[lines.length - 1].trim() === '```') {
+                                                replacementText = lines.slice(1, -1).join('\n');
+                                            } else {
+                                                replacementText = lines.slice(1).join('\n');
+                                            }
+                                        }
+
+                                        if (!editor.selection.isEmpty) {
+                                            edit.replace(editor.document.uri, editor.selection, replacementText);
+                                        } else {
+                                            edit.insert(editor.document.uri, editor.selection.active, replacementText);
+                                        }
+
+                                        await workspace.applyEdit(edit);
+                                        window.showInformationMessage(`LISA: Applied ${actionOverride}`);
+                                    }
+                                } else {
+                                    window.showErrorMessage(`LISA Failed: ${res.error || 'Unknown error'}`);
+                                }
+                            }
+
+                        } catch (e) {
+                            window.showErrorMessage(`LISA Error: ${e}`);
+                        }
                     });
                 }
             })
@@ -271,6 +415,34 @@ export async function activate(context: ExtensionContext) {
                 return;
             }
 
+            if (message.command === 'readProject') {
+                commands.executeCommand('lisa.readProject');
+                return;
+            }
+
+            if (message.command === 'getContext') {
+                let editor = window.activeTextEditor;
+                if (!editor && window.visibleTextEditors.length > 0) {
+                    editor = window.visibleTextEditors[0];
+                }
+
+                if (editor && AgentPanel.currentPanel) {
+                    const fileName = path.basename(editor.document.uri.fsPath);
+                    const content = editor.document.getText();
+                    const language = editor.document.languageId;
+
+                    AgentPanel.currentPanel.postMessage({
+                        command: 'setContext',
+                        file: fileName,
+                        content: content,
+                        language: language
+                    });
+                } else {
+                    window.showWarningMessage("No active editor found to attach.");
+                }
+                return;
+            }
+
             if (message.command === 'runAgent') {
                 const { agent, instruction } = message;
 
@@ -287,6 +459,13 @@ export async function activate(context: ExtensionContext) {
                 // Determine final command/action
                 let lspCommand = instruction;
                 let actionOverride = undefined;
+
+                // If user attached context explicitly, use it TO AUGMENT the auto-context
+                if (message.attachedContext) {
+                    contextData.fileContent = message.attachedContext.content; // Prefer explicit
+                    contextData.languageId = message.attachedContext.language || contextData.languageId;
+                    // We can also add a flag if server needs to know it's explicit
+                }
 
                 if (agent === 'generateTests') {
                     lspCommand = "Generate tests";
@@ -322,8 +501,60 @@ export async function activate(context: ExtensionContext) {
 
                         // Handle File Creation for Tests
                         const res: any = response;
-                        const handled = await handleTestGenerationResponse(res);
-                        if (handled) return;
+                        const handledTest = await handleTestGenerationResponse(res);
+                        if (handledTest) return;
+
+                        // Handle Inline Edits (Refactor / JSDoc)
+                        if (actionOverride === 'refactor' || actionOverride === 'addJsDoc') {
+                            if (res.success && res.data) {
+                                const editor = window.activeTextEditor;
+                                if (editor) {
+                                    const edit = new WorkspaceEdit();
+                                    // Assuming the response data IS the new code or a diff.
+                                    // For simplicity, if it's a full file replacement or block replacement:
+                                    // Ideally LSP returns a TextEdit, but if it returns string:
+
+                                    // If we sent selection, replace selection. If no selection, replace file?
+                                    // contextData.selection
+
+                                    let replacementText = res.data;
+                                    // Strip markdown code blocks if present
+                                    if (replacementText.startsWith('```') && replacementText.endsWith('```')) {
+                                        const lines = replacementText.split('\n');
+                                        replacementText = lines.slice(1, -1).join('\n');
+                                    } else if (replacementText.startsWith('```')) { // Sometimes ends with ```typescript
+                                        const lines = replacementText.split('\n');
+                                        // Find the last line with ```
+                                        if (lines[lines.length - 1].trim() === '```') {
+                                            replacementText = lines.slice(1, -1).join('\n');
+                                        } else {
+                                            replacementText = lines.slice(1).join('\n');
+                                        }
+                                    }
+
+                                    if (!editor.selection.isEmpty) {
+                                        edit.replace(editor.document.uri, editor.selection, replacementText);
+                                    } else {
+                                        // Append or replace? For Add JSDoc to specific function, it's hard without range. 
+                                        // For now, let's assume it replaces the whole file if no selection? Or inserts at cursor?
+                                        // Safer: Insert at cursor
+                                        edit.insert(editor.document.uri, editor.selection.active, replacementText);
+                                    }
+
+                                    await workspace.applyEdit(edit);
+                                    window.showInformationMessage(`LISA: Applied ${actionOverride}`);
+                                    return; // Do NOT send chat response
+                                }
+                            }
+                        }
+
+                        // Send Response back to Webview (Default behavior)
+                        if (AgentPanel.currentPanel) {
+                            AgentPanel.currentPanel.postMessage({
+                                command: 'agentResponse',
+                                data: response
+                            });
+                        }
 
                     } catch (e) {
                         if (AgentPanel.currentPanel) {
