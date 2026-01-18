@@ -105,7 +105,23 @@ async function handleTestGenerationResponse(res: any) {
             // Write File (Full content from Server)
             try {
                 fs.mkdirSync(path.dirname(targetPath), { recursive: true });
-                fs.writeFileSync(targetPath, res.data);
+
+                // Strip Markdown if present
+                let contentToWrite = res.data;
+                if (contentToWrite.startsWith('```')) {
+                    const lines = contentToWrite.split('\n');
+                    // Check if first line is ```xxx
+                    // Check if last line is ```
+                    if (lines[lines.length - 1].trim() === '```') {
+                        // Remove first and last
+                        contentToWrite = lines.slice(1, -1).join('\n');
+                    } else {
+                        // Remove first only (rare)
+                        contentToWrite = lines.slice(1).join('\n');
+                    }
+                }
+
+                fs.writeFileSync(targetPath, contentToWrite);
 
                 // Open Document
                 const doc = await workspace.openTextDocument(targetPath);
@@ -308,19 +324,19 @@ export async function activate(context: ExtensionContext) {
 
                 if (action === 'refactor') {
                     prompt = `Refactor this code: ${selection}`;
-                    actionOverride = 'refactor';
+                    actionOverride = 'Refactoring Code';
                 } else if (action === 'addDocs') {
                     prompt = 'Add JSDoc documentation';
-                    actionOverride = 'addJsDoc'; // Map 'addDocs' -> 'addJsDoc' for consistency
+                    actionOverride = 'Adding JSDoc Documentation';
                 } else if (action === 'generateTests') {
                     prompt = 'Generate unit tests for this code';
-                    actionOverride = 'generateTests';
+                    actionOverride = 'Generating Unit Tests';
                 }
 
                 if (prompt) {
                     await window.withProgress({
                         location: ProgressLocation.Notification,
-                        title: `LISA: Running ${actionOverride}...`,
+                        title: `LISA: ${actionOverride}...`,
                         cancellable: false
                     }, async () => {
                         try {
