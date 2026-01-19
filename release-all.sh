@@ -31,7 +31,7 @@ export NODE_TLS_REJECT_UNAUTHORIZED=0
 npx vsce unpublish trinadhkoya.lisa-vscode --force || echo "Unpublish skipped (extension might not exist)"
 # Publish new version
 cd vscode
-npx vsce publish --no-dependencies
+npx vsce publish
 cd ..
 
 # 5. Publish IntelliJ
