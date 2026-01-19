@@ -30,7 +30,7 @@ echo "Publishing VS Code extension..."
 export NODE_TLS_REJECT_UNAUTHORIZED=0
 # Publish new version
 cd vscode
-npx vsce publish
+yes | npx vsce publish
 cd ..
 
 # 5. Publish IntelliJ
