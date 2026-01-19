@@ -2,7 +2,7 @@
   "name": "lisa-vscode",
   "displayName": "LISA AI Assistant",
   "description": "LISA (Language-Integrated Smart Agent) is a powerful AI companion designed to help you code faster and more efficiently.",
-  "version": "1.1.35",
+  "version": "1.0.38",
   "publisher": "trinadhkoya",
   "icon": "assets/icon.png",
   "repository": {
@@ -66,6 +66,36 @@
           ],
           "default": "off",
           "description": "Traces the communication between VS Code and the LISA language server."
+        },
+        "lisa.provider": {
+          "type": "string",
+          "default": "openai",
+          "description": "The AI provider to use (openai, claude, gemini, groq)."
+        },
+        "lisa.model": {
+          "type": "string",
+          "default": "gpt-4o",
+          "description": "The model to use for the selected provider."
+        },
+        "lisa.apiKey.openai": {
+          "type": "string",
+          "default": "",
+          "description": "API Key for OpenAI."
+        },
+        "lisa.apiKey.claude": {
+          "type": "string",
+          "default": "",
+          "description": "API Key for Anthropic Claude."
+        },
+        "lisa.apiKey.gemini": {
+          "type": "string",
+          "default": "",
+          "description": "API Key for Google Gemini."
+        },
+        "lisa.apiKey.groq": {
+          "type": "string",
+          "default": "",
+          "description": "API Key for Groq."
         }
       }
     }

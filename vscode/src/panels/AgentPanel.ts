@@ -7,6 +7,7 @@ import { getNonce } from "../utilities/getNonce";
  */
 export class AgentPanel {
     public static currentPanel: AgentPanel | undefined;
+    public static pendingSettingsOpen: boolean = false;
     private readonly _panel: WebviewPanel;
     private _disposables: Disposable[] = [];
 
@@ -483,6 +484,12 @@ export class AgentPanel {
                             };
                             renderContextPill();
                             instructionInput.focus();
+                        }
+                    }
+
+                    if (message && message.command === 'openSettings') {
+                        if (settingsPanel) {
+                            settingsPanel.classList.add('open');
                         }
                     }
 

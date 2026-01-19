@@ -48,8 +48,28 @@ class LisaLspServerDescriptor(project: Project, virtualFile: VirtualFile) : LspS
     }
     
     private fun createNodeCommand(scriptPath: String): GeneralCommandLine {
-        return GeneralCommandLine("node", scriptPath, "--stdio")
+        val settings = com.github.trinadhkoya.lisaintellijplugin.settings.LisaPluginSettings.getInstance(project).state
+        
+        val cmd = GeneralCommandLine("node", scriptPath, "--stdio")
             .withWorkDirectory(project.basePath)
             .withEnvironment("NODE_TLS_REJECT_UNAUTHORIZED", "0")
+
+        val apiKey = when (settings.provider) {
+            "openai" -> settings.openaiKey
+            "claude" -> settings.claudeKey
+            "gemini" -> settings.geminiKey
+            "groq" -> settings.groqKey
+            else -> ""
+        }
+
+        if (apiKey.isNotEmpty()) {
+            when (settings.provider) {
+                "openai" -> cmd.withEnvironment("OPENAI_API_KEY", apiKey)
+                "claude" -> cmd.withEnvironment("ANTHROPIC_API_KEY", apiKey)
+                "gemini" -> cmd.withEnvironment("GEMINI_API_KEY", apiKey)
+                "groq" -> cmd.withEnvironment("GROQ_API_KEY", apiKey)
+            }
+        }
+        return cmd
     }
 }

@@ -524,6 +524,31 @@ class AgentToolWindowFactory : ToolWindowFactory, DumbAware {
                             chatHistory.scrollTop = chatHistory.scrollHeight;
                         }
                         
+                        if (message && message.command === 'setAction') {
+                            const action = message.action;
+                            const ctx = message.context || {};
+                            
+                            if (ctx.file) {
+                                attachedContext = {
+                                    file: ctx.file,
+                                    content: ctx.selection || "", 
+                                    language: ctx.language
+                                };
+                                renderContextPill();
+                            }
+                            
+                            if (action === 'refactor') {
+                                instructionInput.value = "Refactor this code: ";
+                                instructionInput.focus();
+                            } else if (action === 'addDocs') {
+                                instructionInput.value = "Add documentation";
+                                submit();
+                            } else if (action === 'generateTests') {
+                                instructionInput.value = "Generate tests";
+                                submit();
+                            }
+                        }
+                        
                         if (message && message.command === 'setContext') {
                             if (message.file) {
                                 attachedContext = {
@@ -622,11 +647,28 @@ class AgentToolWindowFactory : ToolWindowFactory, DumbAware {
                         val model = jsonObject.get("model")?.asString ?: ""
                         val apiKey = jsonObject.get("apiKey")?.asString ?: ""
                         
+                        // 1. Save to Persistent Settings
+                        val settings = com.github.trinadhkoya.lisaintellijplugin.settings.LisaPluginSettings.getInstance(project)
+                        if (provider.isNotEmpty()) settings.state.provider = provider
+                        if (model.isNotEmpty()) settings.state.model = model
+                        
+                        if (apiKey.isNotEmpty()) {
+                            when (provider) {
+                                "openai" -> settings.state.openaiKey = apiKey
+                                "claude" -> settings.state.claudeKey = apiKey
+                                "gemini" -> settings.state.geminiKey = apiKey
+                                "groq" -> settings.state.groqKey = apiKey
+                            }
+                        }
+                        
+                        // 2. Try to update running server
                         val lspManager = LspServerManager.getInstance(project)
                         val servers = lspManager.getServersForProvider(LisaLspServerSupportProvider::class.java)
                         
                         if (servers.isEmpty()) {
-                            dispatchResponse(false, null, "LSP server not found")
+                            // If server is not running, we still saved the settings, which is good!
+                            // The settings will be picked up next time the server starts (thanks to LisaLspServerDescriptor update).
+                            dispatchResponse(true, "Configuration saved! (Server not running, will start with new config)", null)
                             return@executeOnPooledThread
                         }
                         
@@ -645,12 +687,12 @@ class AgentToolWindowFactory : ToolWindowFactory, DumbAware {
                                         dispatchResponse(true, "Configuration saved successfully!", null)
                                     }
                                 } else {
-                                     throw Exception("No compatible sendRequest method found on " + server.javaClass.name + ". Methods: " + server.javaClass.methods.map { it.name }.joinToString(", "))
+                                     throw Exception("No compatible sendRequest method found on " + server.javaClass.name)
                                 }
                             } catch (e: Exception) {
                                 debugLog("Kotlin: Config save failed: ${e.message}")
                                 ApplicationManager.getApplication().invokeLater {
-                                    dispatchResponse(false, null, "Failed to save configuration: ${e.message}")
+                                    dispatchResponse(false, null, "Failed to update running server: ${e.message}")
                                 }
                             }
                         }
@@ -727,6 +769,9 @@ class AgentToolWindowFactory : ToolWindowFactory, DumbAware {
                                 
                                 if (actualResult.startsWith("ERROR:")) {
                                     ApplicationManager.getApplication().invokeLater {
+                                        if (actualResult.contains("API Key") && actualResult.contains("missing")) {
+                                            browser.cefBrowser.executeJavaScript("if(document.getElementById('settings-panel')) document.getElementById('settings-panel').classList.add('open');", null, 0)
+                                        }
                                         dispatchResponse(false, null, actualResult.substring(7))
                                     }
                                     return@launch

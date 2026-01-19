@@ -1,6 +1,6 @@
 import * as path from 'path';
 import * as fs from 'fs';
-import { ExtensionContext, commands, window, workspace, ProgressLocation, OutputChannel, TextEditor, Uri, languages, WorkspaceEdit } from 'vscode';
+import { ExtensionContext, commands, window, workspace, ProgressLocation, OutputChannel, TextEditor, Uri, languages, WorkspaceEdit, ConfigurationTarget } from 'vscode';
 import { LanguageClient, LanguageClientOptions, ServerOptions, TransportKind } from 'vscode-languageclient/node';
 import { AgentPanel } from './panels/AgentPanel';
 import { LisaCodeActionProvider } from './providers/CodeActionProvider';
@@ -136,6 +136,39 @@ async function handleTestGenerationResponse(res: any) {
     return false;
 }
 
+// Helper to check API Key configuration
+async function checkApiKeyConfigured(): Promise<boolean> {
+    const config = workspace.getConfiguration('lisa');
+    const provider = config.get<string>('provider') || 'openai';
+
+    // Check key
+    let apiKey = '';
+    if (provider === 'openai') apiKey = config.get<string>('apiKey.openai') || '';
+    if (provider === 'claude') apiKey = config.get<string>('apiKey.claude') || '';
+    if (provider === 'gemini') apiKey = config.get<string>('apiKey.gemini') || '';
+    if (provider === 'groq') apiKey = config.get<string>('apiKey.groq') || '';
+
+    // Also check environment variables if empty (since server checks them)
+    if (!apiKey) {
+        if (provider === 'openai' && process.env.OPENAI_API_KEY) apiKey = process.env.OPENAI_API_KEY;
+        if (provider === 'claude' && process.env.ANTHROPIC_API_KEY) apiKey = process.env.ANTHROPIC_API_KEY;
+        if (provider === 'gemini' && process.env.GEMINI_API_KEY) apiKey = process.env.GEMINI_API_KEY;
+        if (provider === 'groq' && process.env.GROQ_API_KEY) apiKey = process.env.GROQ_API_KEY;
+    }
+
+    if (!apiKey) {
+        const selection = await window.showErrorMessage(
+            `LISA Configuration Error: API Key for ${provider} is missing. Please configure it.`,
+            'Configure'
+        );
+        if (selection === 'Configure') {
+            await commands.executeCommand('lisa.openAgentManager', { openSettings: true });
+        }
+        return false;
+    }
+    return true;
+}
+
 export async function activate(context: ExtensionContext) {
     try {
         outputChannel = window.createOutputChannel('LISA AI Assistant');
@@ -145,8 +178,15 @@ export async function activate(context: ExtensionContext) {
         // 1. Register Commands *Immediately*
         context.subscriptions.push(
             commands.registerCommand('lisa.execute', async () => {
+                // Pre-check API Key
+                if (!(await checkApiKeyConfigured())) return;
+
                 if (!client || !client.isRunning()) {
-                    window.showErrorMessage('LISA Server is not running. Check Output channel.');
+                    const selection = await window.showErrorMessage('LISA Server is not running. Would you like to configure it?', 'Configure', 'Cancel');
+                    if (selection === 'Configure') {
+                        // Open Agent Manager and show Settings
+                        await commands.executeCommand('lisa.openAgentManager', { openSettings: true });
+                    }
                     return;
                 }
 
@@ -185,7 +225,15 @@ export async function activate(context: ExtensionContext) {
                             window.showInformationMessage(`LISA: ${JSON.stringify(response)}`);
                         } catch (error) {
                             outputChannel.appendLine(`LISA Error: ${error}`);
-                            window.showErrorMessage(`LISA Error: ${error}`);
+                            const errorStr = String(error);
+                            if (errorStr.includes("API Key") || errorStr.includes("Unauthorized")) {
+                                const selection = await window.showErrorMessage(`LISA Configuration Error: ${error}`, 'Configure');
+                                if (selection === 'Configure') {
+                                    await commands.executeCommand('lisa.openAgentManager', { openSettings: true });
+                                }
+                            } else {
+                                window.showErrorMessage(`LISA Error: ${error}`);
+                            }
                         }
                     });
                 }
@@ -194,10 +242,8 @@ export async function activate(context: ExtensionContext) {
 
         context.subscriptions.push(
             commands.registerCommand('lisa.setProvider', async () => {
-                if (!client || !client.isRunning()) {
-                    window.showErrorMessage('LISA Server is not running. Cannot update config.');
-                    return;
-                }
+                // Determine if we need to start/restart. If client is not running, we must start it.
+                // But we first save config, so startup will pick it up.
                 const provider = await window.showQuickPick(['openai', 'groq', 'gemini', 'claude'], { placeHolder: 'Select AI Provider' });
                 if (!provider) return;
 
@@ -218,13 +264,28 @@ export async function activate(context: ExtensionContext) {
                 if (!model) return;
 
                 try {
-                    // Save to persistent storage
-                    await context.globalState.update('lisaProvider', provider);
-                    await context.globalState.update('lisaModel', model);
-                    await context.secrets.store('lisaApiKey', apiKey);
+                    // Save to persistent configuration (User Settings)
+                    const config = workspace.getConfiguration('lisa');
+                    const target = ConfigurationTarget.Global; // Save to User Settings
 
-                    await client.sendRequest('lisa/updateConfig', { provider, apiKey, model });
-                    window.showInformationMessage(`LISA updated to use ${provider}`);
+                    await config.update('provider', provider, target);
+                    await config.update('model', model, target);
+
+                    // Save API Key to specific field
+                    if (provider === 'openai') await config.update('apiKey.openai', apiKey, target);
+                    if (provider === 'claude') await config.update('apiKey.claude', apiKey, target);
+                    if (provider === 'gemini') await config.update('apiKey.gemini', apiKey, target);
+                    if (provider === 'groq') await config.update('apiKey.groq', apiKey, target);
+
+                    // Restart or Update Server
+                    if (client && client.isRunning()) {
+                        await client.sendRequest('lisa/updateConfig', { provider, apiKey, model });
+                        window.showInformationMessage(`LISA updated to use ${provider}`);
+                    } else {
+                        // Start server if not running!
+                        window.showInformationMessage(`Configuration saved. Starting LISA server...`);
+                        await startLspServer(context);
+                    }
                 } catch (error) {
                     outputChannel.appendLine(`Failed to update LISA config: ${error}`);
                     window.showErrorMessage(`Failed to update LISA config: ${error}`);
@@ -243,8 +304,19 @@ export async function activate(context: ExtensionContext) {
 
 
         context.subscriptions.push(
-            commands.registerCommand('lisa.openAgentManager', async () => {
+            commands.registerCommand('lisa.openAgentManager', async (options?: { openSettings?: boolean }) => {
+                // Set pending flag if requested
+                if (options?.openSettings) {
+                    AgentPanel.pendingSettingsOpen = true;
+                }
+
                 AgentPanel.render(context.extensionUri);
+
+                // If panel is already alive, we might not get a new requestConfig, so try sending immediately too
+                if (AgentPanel.currentPanel && options?.openSettings) {
+                    AgentPanel.currentPanel.postMessage({ command: 'openSettings' });
+                    AgentPanel.pendingSettingsOpen = false; // Handled
+                }
 
                 // 1. Send context
                 const editor = window.activeTextEditor;
@@ -303,9 +375,15 @@ export async function activate(context: ExtensionContext) {
             }),
 
             commands.registerCommand('lisa.runAction', async (args: any) => {
+                // Pre-check API Key
+                if (!(await checkApiKeyConfigured())) return;
+
                 if (!client || !client.isRunning()) {
-                    window.showErrorMessage('LISA Server is not running.');
-                    return;
+                    const selection = await window.showErrorMessage('LISA Server is not running. Would you like to configure it?', 'Configure', 'Cancel');
+                    if (selection === 'Configure') {
+                        // Open Agent Manager and show Settings
+                        await commands.executeCommand('lisa.openAgentManager', { openSettings: true });
+                    } return;
                 }
 
                 const { action, file, selection, language } = args;
@@ -320,23 +398,27 @@ export async function activate(context: ExtensionContext) {
                 };
 
                 let prompt = '';
-                let actionOverride = '';
+                let progressTitle = '';
+                let internalAction = '';
 
                 if (action === 'refactor') {
                     prompt = `Refactor this code: ${selection}`;
-                    actionOverride = 'Refactoring Code';
+                    progressTitle = 'Refactoring Code';
+                    internalAction = 'refactor';
                 } else if (action === 'addDocs') {
                     prompt = 'Add JSDoc documentation';
-                    actionOverride = 'Adding JSDoc Documentation';
+                    progressTitle = 'Adding JSDoc Documentation';
+                    internalAction = 'addJsDoc';
                 } else if (action === 'generateTests') {
                     prompt = 'Generate unit tests for this code';
-                    actionOverride = 'Generating Unit Tests';
+                    progressTitle = 'Generating Unit Tests';
+                    internalAction = 'generateTests';
                 }
 
                 if (prompt) {
                     await window.withProgress({
                         location: ProgressLocation.Notification,
-                        title: `LISA: ${actionOverride}...`,
+                        title: `LISA: ${progressTitle}...`,
                         cancellable: false
                     }, async () => {
                         try {
@@ -344,6 +426,12 @@ export async function activate(context: ExtensionContext) {
                                 command: prompt,
                                 context: contextData
                             });
+
+                            // Check for server-side error (success: false)
+                            // If we don't throw, we handle it as success. But if it's an API error, we want the catch block.
+                            if (response && response.success === false) {
+                                throw new Error(response.error || 'Unknown Server Error');
+                            }
 
                             // Reuse logic from lisa.execute / message handler
 
@@ -353,7 +441,7 @@ export async function activate(context: ExtensionContext) {
                             if (handledTest) return;
 
                             // 2. Inline Edits
-                            if (actionOverride === 'refactor' || actionOverride === 'addJsDoc') {
+                            if (internalAction === 'refactor' || internalAction === 'addJsDoc') {
                                 if (res.success && res.data) {
                                     // Apply to editor
                                     const editor = window.visibleTextEditors.find(e => e.document.uri.fsPath === file) || window.activeTextEditor;
@@ -381,15 +469,24 @@ export async function activate(context: ExtensionContext) {
                                         }
 
                                         await workspace.applyEdit(edit);
-                                        window.showInformationMessage(`LISA: Applied ${actionOverride}`);
+                                        window.showInformationMessage(`LISA: Applied ${progressTitle}`);
                                     }
                                 } else {
-                                    window.showErrorMessage(`LISA Failed: ${res.error || 'Unknown error'}`);
+                                    // Should be caught by the success check above, but safely fallback
+                                    throw new Error(res.error || 'Unknown error');
                                 }
                             }
 
                         } catch (e) {
-                            window.showErrorMessage(`LISA Error: ${e}`);
+                            const errorStr = String(e);
+                            if (errorStr.includes("API Key") || errorStr.includes("Unauthorized")) {
+                                const selection = await window.showErrorMessage(`LISA Configuration Error: ${e}`, 'Configure');
+                                if (selection === 'Configure') {
+                                    await commands.executeCommand('lisa.openAgentManager', { openSettings: true });
+                                }
+                            } else {
+                                window.showErrorMessage(`LISA Error: ${e}`);
+                            }
                         }
                     });
                 }
@@ -401,12 +498,34 @@ export async function activate(context: ExtensionContext) {
             if (message.command === 'saveConfig') {
                 const { provider, model, apiKey } = message;
                 try {
-                    await context.globalState.update('lisaProvider', provider);
-                    await context.globalState.update('lisaModel', model);
-                    await context.secrets.store('lisaApiKey', apiKey);
+                    const config = workspace.getConfiguration('lisa');
+                    const target = ConfigurationTarget.Global;
+
+                    await config.update('provider', provider, target);
+                    await config.update('model', model, target);
+
+                    if (apiKey) {
+                        if (provider === 'openai') await config.update('apiKey.openai', apiKey, target);
+                        if (provider === 'claude') await config.update('apiKey.claude', apiKey, target);
+                        if (provider === 'gemini') await config.update('apiKey.gemini', apiKey, target);
+                        if (provider === 'groq') await config.update('apiKey.groq', apiKey, target);
+                    }
 
                     if (client && client.isRunning()) {
-                        await client.sendRequest('lisa/updateConfig', { provider, apiKey, model });
+                        // If we are just switching provider, we might need to fetch the stored key if user didn't provide a new one?
+                        // The UI sends the value of the password field. If empty, maybe keeping old one?
+                        // But here we rely on the UI sending the intention.
+
+                        // If apiKey is empty in message, maybe retrieve from config?
+                        let effectiveKey = apiKey;
+                        if (!effectiveKey) {
+                            if (provider === 'openai') effectiveKey = config.get('apiKey.openai');
+                            if (provider === 'claude') effectiveKey = config.get('apiKey.claude');
+                            if (provider === 'gemini') effectiveKey = config.get('apiKey.gemini');
+                            if (provider === 'groq') effectiveKey = config.get('apiKey.groq');
+                        }
+
+                        await client.sendRequest('lisa/updateConfig', { provider, apiKey: effectiveKey, model });
                     }
                     window.showInformationMessage(`LISA Config Saved: ${provider} / ${model}`);
                 } catch (e) {
@@ -417,9 +536,16 @@ export async function activate(context: ExtensionContext) {
 
             if (message.command === 'requestConfig') {
                 // Resend config if requested (e.g. reload)
-                const savedProvider = context.globalState.get<string>('lisaProvider');
-                const savedModel = context.globalState.get<string>('lisaModel');
-                const savedApiKey = await context.secrets.get('lisaApiKey');
+                const config = workspace.getConfiguration('lisa');
+                const savedProvider = config.get<string>('provider');
+                const savedModel = config.get<string>('model');
+
+                let savedApiKey = '';
+                if (savedProvider === 'openai') savedApiKey = config.get<string>('apiKey.openai') || '';
+                if (savedProvider === 'claude') savedApiKey = config.get<string>('apiKey.claude') || '';
+                if (savedProvider === 'gemini') savedApiKey = config.get<string>('apiKey.gemini') || '';
+                if (savedProvider === 'groq') savedApiKey = config.get<string>('apiKey.groq') || '';
+
                 if (AgentPanel.currentPanel) {
                     AgentPanel.currentPanel.postMessage({
                         command: 'loadConfig',
@@ -427,6 +553,12 @@ export async function activate(context: ExtensionContext) {
                         model: savedModel,
                         apiKey: savedApiKey
                     });
+
+                    // Check pending settings flag
+                    if (AgentPanel.pendingSettingsOpen) {
+                        AgentPanel.currentPanel.postMessage({ command: 'openSettings' });
+                        AgentPanel.pendingSettingsOpen = false;
+                    }
                 }
                 return;
             }
@@ -496,6 +628,18 @@ export async function activate(context: ExtensionContext) {
 
                 // Call Server
                 if (client && client.isRunning()) {
+                    // Pre-check API Key for Webview requests too
+                    if (!(await checkApiKeyConfigured())) {
+                        // Send specific error to stop loading spinner
+                        if (AgentPanel.currentPanel) {
+                            AgentPanel.currentPanel.postMessage({
+                                command: 'agentResponse',
+                                data: { success: false, error: 'API Key missing. Please Configure.' }
+                            });
+                        }
+                        return;
+                    }
+
                     try {
                         let prompt = instruction;
                         if (agent === 'generateTests') prompt = 'Generate unit tests for this code';
@@ -507,13 +651,9 @@ export async function activate(context: ExtensionContext) {
                             context: contextData
                         });
 
-                        // Send Response back to Webview
-                        if (AgentPanel.currentPanel) {
-                            AgentPanel.currentPanel.postMessage({
-                                command: 'agentResponse',
-                                data: response
-                            });
-                        }
+                        // Remove duplicate response here!
+                        // The single response should be sent at the END of the try/catch block for chat,
+                        // or intercepted by handledTest/inlineEdit logic.
 
                         // Handle File Creation for Tests
                         const res: any = response;
@@ -588,74 +728,105 @@ export async function activate(context: ExtensionContext) {
         };
 
         // 2. Start Request - Connect to Language Server
-        try {
-            // serverModule logic...
-            let serverModule = context.asAbsolutePath(path.join('server', 'server.js')); // Prod path
-            const devServerModule = context.asAbsolutePath(path.join('..', 'dist', 'server.js')); // Dev path
-
-            if (fs.existsSync(devServerModule)) {
-                outputChannel.appendLine(`Found dev server: ${devServerModule}`);
-                serverModule = devServerModule;
-            } else if (!fs.existsSync(serverModule)) {
-                outputChannel.appendLine(`Server not found at ${serverModule} or ${devServerModule}`);
-                window.showErrorMessage(`LISA Server not found. Extension will not function fully.`);
-                return;
-            }
-
-            outputChannel.appendLine(`Starting LISA server from: ${serverModule}`);
-
-            const serverOptions: ServerOptions = {
-                run: { module: serverModule, transport: TransportKind.stdio },
-                debug: {
-                    module: serverModule,
-                    transport: TransportKind.stdio,
-                    options: { execArgv: ['--nolazy', '--inspect=6009'] }
-                }
-            };
-
-            const clientOptions: LanguageClientOptions = {
-                documentSelector: [
-                    { scheme: 'file', language: 'typescript' },
-                    { scheme: 'file', language: 'javascript' },
-                    { scheme: 'file', language: 'markdown' }
-                ],
-                synchronize: {
-                    fileEvents: workspace.createFileSystemWatcher('**/.clientrc')
-                },
-                outputChannel: outputChannel
-            };
-
-            client = new LanguageClient('lisaLsp', 'LISA AI Assistant', serverOptions, clientOptions);
-            await client.start();
-            outputChannel.appendLine('LISA AI Assistant client started');
-
-            // Restore saved configuration
-            const savedProvider = context.globalState.get<string>('lisaProvider');
-            const savedModel = context.globalState.get<string>('lisaModel');
-            const savedApiKey = await context.secrets.get('lisaApiKey');
-
-            if (savedProvider && savedModel && savedApiKey) {
-                try {
-                    await client.sendRequest('lisa/updateConfig', {
-                        provider: savedProvider,
-                        apiKey: savedApiKey,
-                        model: savedModel
-                    });
-                    outputChannel.appendLine(`Restored LISA config for ${savedProvider}`);
-                } catch (err) {
-                    outputChannel.appendLine(`Failed to restore LISA config: ${err}`);
-                }
-            } else {
-                outputChannel.appendLine('No saved LISA config found. User must configure.');
-            }
-
-        } catch (err) {
-            outputChannel.appendLine(`Failed to activate LISA server: ${err}`);
-            window.showErrorMessage(`LISA Extension Activation Error: ${err}`);
-        }
+        await startLspServer(context);
     } catch (e) {
         console.error('LISA FATAL ERROR:', e);
         window.showErrorMessage(`LISA Extension failed to activate: ${e}`);
+    }
+}
+
+async function startLspServer(context: ExtensionContext) {
+    try {
+        if (client && client.isRunning()) {
+            return; // Already running
+        }
+
+        // serverModule logic...
+        let serverModule = context.asAbsolutePath(path.join('server', 'server.js')); // Prod path
+        const devServerModule = context.asAbsolutePath(path.join('..', 'dist', 'server.js')); // Dev path
+
+        if (fs.existsSync(devServerModule)) {
+            outputChannel.appendLine(`Found dev server: ${devServerModule}`);
+            serverModule = devServerModule;
+        } else if (!fs.existsSync(serverModule)) {
+            outputChannel.appendLine(`Server not found at ${serverModule} or ${devServerModule}`);
+            window.showErrorMessage(`LISA Server not found. Extension will not function fully.`);
+            return;
+        }
+
+        outputChannel.appendLine(`Starting LISA server from: ${serverModule}`);
+
+        // Read Configuration
+        const config = workspace.getConfiguration('lisa');
+        const provider = config.get<string>('provider') || 'openai';
+        const model = config.get<string>('model') || 'gpt-4o';
+
+        // Get API Key based on provider
+        const apiKeyOpenAI = config.get<string>('apiKey.openai') || process.env.OPENAI_API_KEY || '';
+        const apiKeyClaude = config.get<string>('apiKey.claude') || process.env.ANTHROPIC_API_KEY || '';
+        const apiKeyGemini = config.get<string>('apiKey.gemini') || process.env.GEMINI_API_KEY || '';
+        const apiKeyGroq = config.get<string>('apiKey.groq') || process.env.GROQ_API_KEY || '';
+
+        const env = {
+            ...process.env,
+            NODE_TLS_REJECT_UNAUTHORIZED: '0',
+            OPENAI_API_KEY: apiKeyOpenAI,
+            ANTHROPIC_API_KEY: apiKeyClaude,
+            GEMINI_API_KEY: apiKeyGemini,
+            GROQ_API_KEY: apiKeyGroq
+        };
+
+        const serverOptions: ServerOptions = {
+            run: { module: serverModule, transport: TransportKind.stdio, options: { env } },
+            debug: {
+                module: serverModule,
+                transport: TransportKind.stdio,
+                options: { execArgv: ['--nolazy', '--inspect=6009'], env }
+            }
+        };
+
+        const clientOptions: LanguageClientOptions = {
+            documentSelector: [
+                { scheme: 'file', language: 'typescript' },
+                { scheme: 'file', language: 'javascript' },
+                { scheme: 'file', language: 'markdown' }
+            ],
+            synchronize: {
+                fileEvents: workspace.createFileSystemWatcher('**/.clientrc')
+            },
+            outputChannel: outputChannel
+        };
+
+        client = new LanguageClient('lisaLsp', 'LISA AI Assistant', serverOptions, clientOptions);
+        await client.start();
+        outputChannel.appendLine('LISA AI Assistant client started');
+
+        // Initial Config Sync
+        try {
+            // Determine active key
+            let activeKey = '';
+            if (provider === 'openai') activeKey = apiKeyOpenAI;
+            if (provider === 'claude') activeKey = apiKeyClaude;
+            if (provider === 'gemini') activeKey = apiKeyGemini;
+            if (provider === 'groq') activeKey = apiKeyGroq;
+
+            // Also check secrets or globalState for legacy overrides or if user set via command?
+            // For now, workspace configuration is the source of truth for startup env, 
+            // but we also send an updateConfig to ensure server in-memory state matches if it differs from env default.
+
+            await client.sendRequest('lisa/updateConfig', {
+                provider: provider,
+                apiKey: activeKey,
+                model: model
+            });
+            outputChannel.appendLine(`Restored LISA config for ${provider}`);
+        } catch (err) {
+            outputChannel.appendLine(`Failed to sync initial LISA config: ${err}`);
+        }
+
+    } catch (err) {
+        outputChannel.appendLine(`Failed to activate LISA server: ${err}`);
+        window.showErrorMessage(`LISA Extension Activation Error: ${err}`);
     }
 }
 

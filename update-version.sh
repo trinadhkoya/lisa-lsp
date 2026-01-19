@@ -2,7 +2,7 @@
 
 # Get the total commit count
 COMMIT_COUNT=$(git rev-list --count HEAD)
-NEW_VERSION="1.1.$COMMIT_COUNT"
+NEW_VERSION="1.0.$COMMIT_COUNT"
 
 echo "Updating project versions to $NEW_VERSION..."
 
