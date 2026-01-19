@@ -8,6 +8,10 @@ git add .
 git commit -m "Release update" || echo "Nothing to commit, proceeding..."
 git push
 
+# 1.1 Bundle Server (Ensure dependencies are included)
+echo "Bundling server..."
+npx esbuild src/server.ts --bundle --outfile=dist/server.js --platform=node --target=node18 --external:vscode
+
 # 2. Update versions (Syncs VS Code and IntelliJ to git commit count)
 echo "Syncing versions..."
 ./update-version.sh
