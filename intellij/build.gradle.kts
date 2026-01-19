@@ -136,6 +136,22 @@ tasks {
         dependsOn(patchChangelog)
     }
 
+    val prepareServer by registering(Copy::class) {
+        from(rootProject.file("../dist")) {
+            include("server.js")
+            into("server")
+        }
+        from(rootProject.file("../node_modules")) {
+            into("server/node_modules")
+        }
+        destinationDir = layout.buildDirectory.dir("server-resources").get().asFile
+    }
+
+    processResources {
+        dependsOn(prepareServer)
+        from(prepareServer)
+    }
+
     buildSearchableOptions {
         enabled = false
     }

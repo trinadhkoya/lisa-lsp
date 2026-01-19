@@ -10,41 +10,39 @@ class LisaLspServerDescriptor(project: Project, virtualFile: VirtualFile) : LspS
     override fun isSupportedFile(file: VirtualFile) = file.extension != null
 
     override fun createCommandLine(): GeneralCommandLine {
-        // Priority 1: Environment Variable
+        // Priority 1: Bundled Server (Production)
+        val pluginId = com.intellij.openapi.extensions.PluginId.getId("com.github.trinadhkoya.lisaintellijplugin")
+        val plugin = com.intellij.ide.plugins.PluginManagerCore.getPlugin(pluginId)
+        if (plugin != null) {
+            val bundledPath = File(plugin.path, "server/server.js")
+            if (bundledPath.exists()) {
+                return createNodeCommand(bundledPath.absolutePath)
+            }
+            // If running from IDE with Gradle, resources might be in 'classes' or 'resources'
+            val devBundledPath = File(plugin.path, "classes/kotlin/main/server/server.js")
+             if (devBundledPath.exists()) {
+                return createNodeCommand(devBundledPath.absolutePath)
+            }
+        }
+
+        // Priority 2: Environment Variable
         val envPath = System.getenv("LISA_SERVER_PATH")
         if (envPath != null && File(envPath).exists()) {
             return createNodeCommand(envPath)
         }
 
-        // Priority 2: User Home / Documents (Common for this user)
-        val userHome = System.getProperty("user.home")
-        val documentsPath = "$userHome/Documents/mcp-lsp/dist/server.js"
-        if (File(documentsPath).exists()) {
-             return createNodeCommand(documentsPath)
+        // Priority 3: Development mode - Context check
+        val projectBase = project.basePath
+        if (projectBase != null) {
+             val distPath = File(projectBase).parentFile?.resolve("dist/server.js")
+             if (distPath != null && distPath.exists()) {
+                 return createNodeCommand(distPath.absolutePath)
+             }
         }
 
-        // Priority 3: User Home / Desktop (Fallback)
-        val desktopPath = "$userHome/Desktop/mcp-lsp/dist/server.js"
-        if (File(desktopPath).exists()) {
-            return createNodeCommand(desktopPath)
-        }
-        
-        // Priority 4: Development mode - Check relative to project root
-        // Assuming project.basePath is mcp-lsp/intellij, then ../dist/server.js
-        val basePath = project.basePath
-        if (basePath != null) {
-            val devPath = File(basePath).parentFile?.resolve("dist/server.js")?.absolutePath
-            if (devPath != null && File(devPath).exists()) {
-                 return createNodeCommand(devPath)
-            }
-        }
-
-        // If we get here, we can't find the server. 
-        // We'll throw an exception that might be visible in the logs, or fall back to a default that will likely fail but at least we tried.
-        // For better UX, we'll return the Documents path so the error message "Stream closed" might at least hint at a missing file if someone looks at the command line.
-        // But better to log it.
-        println("LISA LSP ERROR: Could not find server.js in standard locations.")
-        return createNodeCommand(documentsPath)
+        // Fallback or Error
+        println("LISA LSP ERROR: Could not find server.js in bundled or standard locations.")
+        return createNodeCommand("") // Will likely fail with clear error
     }
     
     private fun createNodeCommand(scriptPath: String): GeneralCommandLine {

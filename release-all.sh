@@ -6,6 +6,7 @@ echo "Committing changes..."
 git add .
 # Allow commit to fail if there's nothing to commit, but don't exit script
 git commit -m "Release update" || echo "Nothing to commit, proceeding..."
+git push
 
 # 2. Update versions (Syncs VS Code and IntelliJ to git commit count)
 echo "Syncing versions..."
@@ -27,8 +28,6 @@ cd ..
 echo "Publishing VS Code extension..."
 # Bypass SSL errors
 export NODE_TLS_REJECT_UNAUTHORIZED=0
-# Try to unpublish, but don't fail the script if it doesn't exist
-npx vsce unpublish trinadhkoya.lisa-vscode --force || echo "Unpublish skipped (extension might not exist)"
 # Publish new version
 cd vscode
 npx vsce publish

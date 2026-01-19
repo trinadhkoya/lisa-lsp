@@ -2,7 +2,7 @@
   "name": "lisa-vscode",
   "displayName": "LISA AI Assistant",
   "description": "LISA (Language-Integrated Smart Agent) is a powerful AI companion designed to help you code faster and more efficiently.",
-  "version": "1.0.39",
+  "version": "1.0.40",
   "publisher": "trinadhkoya",
   "icon": "assets/icon.png",
   "repository": {
